@@ -14,8 +14,11 @@ build/
 .env
 .env.local
 
-# Experiment outputs & local field photos (keep templates/docs tracked)
+# Experiment outputs & local runtime data (keep templates/docs tracked)
 outputs/
+data/
+frontend/node_modules/
+frontend/dist/
 *.log
 .DS_Store
 Thumbs.db
