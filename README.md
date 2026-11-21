@@ -1,88 +1,78 @@
-# CFA Productivity — Kit de Validación de Validez (PoC)
+# CFA Productivity — Sistema Interno de Control de Avance, Productividad y Asistencia en Obra
 
-Este repositorio contiene el **Kit de Validación (Etapa 0 / PoC)** para comprobar en una obra real si el núcleo técnico de **CFA: Sistema Interno de Control de Avance y Productividad en Obra** cumple los umbrales de precisión y usabilidad **antes** de invertir en el desarrollo completo de la aplicación.
-
-## Hipótesis Go / No-Go que valida este kit
-
-| # | Hipótesis | Criterio de éxito |
-|---|---|---|
-| **H1** | Calibración Día 1 (regla ArUco) + Alineación Días 2+ (sin regla) con OpenCV | **≥ 90%** de fotos alineadas correctamente a mano alzada |
-| **H2** | Precisión métrica ($m^2$ calculados vs cinta métrica) | Error promedio **< 5%** en condiciones normales |
-| **H3** | Fricción de captura en campo con *Ghost Overlay* (lente `1x`) | Captura repetible en **≤ 15 segundos** por muro |
+Aplicación web móvil (**PWA offline-first**) + backend **FastAPI / OpenCV / IA** diseñada para cuantificar automáticamente el avance físico diario ($m^2$), registrar la asistencia de cuadrillas en 1 toque y calcular el rendimiento real ($m^2/\text{HH}$) contra el presupuesto APU.
 
 ---
 
-## Estructura del kit
+## Arquitectura del repositorio
 
-- `vision_lab/generate_ruler.py` — Genera el PDF/PNG imprimible **1:1** de los 2 marcadores ArUco `DICT_4X4_50` (15 × 15 cm, IDs `0` y `1`).
-- `vision_lab/calibrate_and_align.py` — Calibración métrica Día 1 (homografía con los 8 vértices ArUco) y alineación sin regla Días 2+ (SIFT/AKAZE + USAC_MAGSAC/RANSAC).
-- `vision_lab/segmenters.py` — Backends de segmentación intercambiables: `diff` (baseline determinista local), `mask_dir` (máscaras PNG externas, ej. desde SAM 2 en Colab) y `sam2` (GPU local).
-- `vision_lab/evaluate_progress.py` — Ejecuta el experimento completo contra tus mediciones reales con cinta métrica y genera `report.md`, `report.json` e imágenes con la máscara superpuesta.
-- `vision_lab/audit_gemini.py` — Auditoría multimodal opcional con Gemini API para verificar si dos fotos corresponden al mismo muro y detectar obstrucciones (andamios, trabajadores, sombras).
-- `field_capture_poc/index.html` — Mini-cámara móvil Poka-Yoke con *Ghost Overlay*, nivel, nitidez en vivo, semáforo y cronómetro para validar **H3** en obra.
-- `data_template/` — Plantillas de `wall_config.json` y `ground_truth.csv` para registrar tu prueba real.
+```text
+CFA-PRODUCTIVITY/
+├── backend/              # API FastAPI + SQLAlchemy (SQLite/PostgreSQL) + importador DXF + motor de visión
+├── frontend/             # PWA React + TypeScript + Vite + IndexedDB (Dexie) + Service Worker offline
+├── vision_lab/           # Laboratorio de calibración ArUco (Día 1), homografía (Días 2+), SAM 2 y Gemini
+├── field_capture_poc/    # PoC estático publicado en GitHub Pages (Cámara Poka-Yoke + Asistencia + PDF Regla)
+├── data_template/        # Plantillas de configuración y ground truth para experimentos con cinta métrica
+└── tests/                # Pruebas automatizadas end-to-end (visión + API completa)
+```
 
 ---
 
-## Instalación rápida
+## Módulos implementados (MVP v1)
 
+1. **Oficina y Programación Semanal (5 min)**
+   - Importación de planos `.dxf` (`ezdxf`) a mapa **SVG interactivo**, registro único del desvío del Norte y geofence de 100 m.
+   - Obra piloto precargada automáticamente (*Entrada → Cocina → Baño → Cuarto 2*, 8 muros SVG).
+   - Programación semanal: selección de frentes activos, asignación de cuadrillas y ordenamiento físico de la caminata (`↑` / `↓`).
+2. **Campo — "Modo Recorrido Guiado" (PWA Offline-first)**
+   - Botón único **"Iniciar recorrido de hoy"** (cero menús), guía secuencial muro por muro e indicador de regla ArUco el Día 1.
+   - **Cámara Poka-Yoke (`1x`):** *ghost overlay* ajustable, validación en vivo de nitidez y luz, semáforo con instrucciones de ≤ 3 palabras y auto-disparo tras 1 s en verde.
+   - **Válvulas de escape en 1 toque:** *Saltar por ahora*, *Sin avance hoy* (lluvia, falta de material, espera de plano, retrabajo) y *Forzar captura + nota de voz (5 s)* tras 3 intentos.
+   - Cola offline en **IndexedDB (Dexie)** con sincronización automática al recuperar señal.
+3. **Control de Asistencia en 1 Toque**
+   - Botón **Igual que ayer**, validación de geofencing de 100 m, estados *Presente / Parcial / Ausente*, horas extra, foto grupal de cuadrilla, guardado offline y exportación CSV para planilla.
+   - Alimenta directamente las **Horas-Hombre (HH)** reales del cálculo de productividad ($m^2/\text{HH}$).
+4. **Motor Híbrido de Visión + Tablero de Control y Aprobación (5 seg)**
+   - **OpenCV:** Calibración métrica Día 1 con regla ArUco (`DICT_4X4_50`) y alineación sin regla Días 2+ por homografía.
+   - **Mapa de calor SVG:** Colorea cada muro automáticamente (rojo: sin iniciar, amarillo: en proceso, verde: terminado).
+   - **Validación rápida de 5 segundos:** Muestra la foto con máscara verde semitransparente para aprobar, ajustar $m^2$ o rechazar antes de enviar a costos/destajo.
+   - **Exportación CSV:** Respaldo de planilla por destajo y reporte de asistencia.
+
+---
+
+## Cómo ejecutar el MVP en local
+
+### 1. Backend (FastAPI + OpenCV + SQLite)
 ```bash
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
-# Opcional: si vas a probar auditoría con Gemini o SAM 2
-pip install -r requirements-ai.txt
-cp .env.example .env
+uvicorn backend.main:app --reload --port 8000
 ```
+- Documentación interactiva Swagger: `http://127.0.0.1:8000/docs`
+
+### 2. Frontend (PWA React + Vite)
+En otra terminal:
+```bash
+cd frontend
+npm install
+npm run dev
+```
+- Abre `http://localhost:5173` (el proyecto piloto se inicializa automáticamente al primer arranque).
 
 ---
 
-## Paso a paso para ejecutar la prueba en obra real
-
-### Paso 1 — Imprimir y armar la regla fotogramétrica (10 min)
-```bash
-python -m vision_lab.generate_ruler --page-size letter
-```
-1. Imprime `outputs/ruler/regla_aruco_15cm_letter_100pct.pdf` al **100% (escala real, sin ajustar a página)** en papel bond **mate** (no plastificar brillante).
-2. Verifica con cinta métrica que la barra de control mida **10.0 cm** y cada cuadro negro mida **15.0 × 15.0 cm**.
-3. Pega ambos marcadores en un listón rígido de 1.00 m con **80.0 cm exactos entre centros** (`ID 0` a la izquierda, `ID 1` a la derecha).
-
-### Paso 2 — Capturar 30–50 fotos en 1 o 2 muros reales (mampostería o repello)
-- Usa lente `1x` (sin zoom). Puedes usar la mini-cámara de [`field_capture_poc/index.html`](field_capture_poc/index.html) para probar el *Ghost Overlay* y medir el tiempo por toma (**H3**).
-- **Día 1:** Toma 3–5 fotos con la regla apoyada plana contra el muro.
-- **Días 2 al cierre:** Toma fotos **sin regla**, anotando en tu CSV el área real ejecutada en $m^2$ medida con cinta métrica. Incluye 5–10 tomas "difíciles" (`condition=dificil`) con cambios de luz, sombras o andamios.
-
-### Paso 3 — Correr el evaluador de precisión (H1 y H2)
-Copia las plantillas de `data_template/` a una carpeta con tus fotos (por ejemplo `mi_obra/`), edita `wall_config.json` y `ground_truth.csv`, y ejecuta:
-
-```bash
-python -m vision_lab.evaluate_progress \
-  --config mi_obra/wall_config.json \
-  --ground-truth mi_obra/ground_truth.csv \
-  --output-dir outputs/piloto_muro1 \
-  --segmenter diff
-```
-> Cuando tengas máscaras generadas con SAM 2 (por ejemplo en Colab), corre el mismo comando con `--segmenter mask_dir --masks-dir mi_obra/masks` o directamente `--segmenter sam2` si cuentas con GPU local.
-
-Revisa el veredicto automático y las evidencias visuales en:
-- `outputs/piloto_muro1/report.md`
-- `outputs/piloto_muro1/overlays/`
-
-### Paso 4 — Probar la auditoría multimodal con Gemini (opcional)
-```bash
-python -m vision_lab.audit_gemini \
-  --prev mi_obra/day1_con_regla.jpg \
-  --curr mi_obra/day2_toma1.jpg \
-  --wall-name "Cocina - Muro Norte" \
-  --trade "mamposteria" \
-  --net-area-m2 10.5
-```
-
----
-
-## Verificar la instalación (pruebas automatizadas)
+## Pruebas automatizadas
 
 ```bash
 pytest -v
 ```
+
+---
+
+## Kit de Validación de Campo (PoC público)
+- **Mini-cámara Poka-Yoke + Asistencia (GitHub Pages):** https://kevinfa1.github.io/CFA-PRODUCTIVITY/field_capture_poc/
+- **Generar regla ArUco imprimible 1:1:** `python -m vision_lab.generate_ruler --page-size letter`
+- **Evaluar precisión contra cinta métrica (< 5%):** `python -m vision_lab.evaluate_progress --config ... --ground-truth ...`
+- **Auditoría multimodal con Gemini:** `python -m vision_lab.audit_gemini --prev ... --curr ...` (requiere `GEMINI_API_KEY` en `.env`)

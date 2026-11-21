@@ -13,21 +13,28 @@ from fastapi.testclient import TestClient
 from vision_lab.generate_ruler import generate_aruco_marker_array
 
 
+from sqlalchemy import create_engine
+from sqlalchemy.orm import sessionmaker
+
+from backend.database import Base, get_db
+from backend.main import app
+
+
 def _make_client(tmp_path: Path) -> TestClient:
-    os.environ["CFA_DATA_DIR"] = str(tmp_path / "data")
-    os.environ["CFA_DATABASE_URL"] = f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
+    db_url = f"sqlite:///{(tmp_path / 'test.db').as_posix()}"
+    engine = create_engine(db_url, connect_args={"check_same_thread": False}, future=True)
+    TestingSessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, expire_on_commit=False)
+    Base.metadata.create_all(bind=engine)
 
-    # Reimportar limpiamente con la BD temporal de pruebas
-    import importlib
-    import backend.database as db_mod
-    import backend.models as models_mod
-    import backend.main as main_mod
+    def _override_get_db():
+        db = TestingSessionLocal()
+        try:
+            yield db
+        finally:
+            db.close()
 
-    importlib.reload(db_mod)
-    importlib.reload(models_mod)
-    importlib.reload(main_mod)
-    db_mod.init_db()
-    return TestClient(main_mod.app)
+    app.dependency_overrides[get_db] = _override_get_db
+    return TestClient(app)
 
 
 def _encode_synthetic_wall_png(with_ruler: bool, progress: bool) -> bytes:
