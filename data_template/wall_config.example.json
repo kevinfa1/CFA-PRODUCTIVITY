@@ -1,0 +1,15 @@
+{
+  "wall_name": "Cocina - Muro Norte (Piloto)",
+  "trade": "mamposteria",
+  "net_wall_area_m2": 10.5,
+  "day1_photo": "day1_con_regla.jpg",
+  "exclude_ruler_in_segmentation": true,
+  "aruco_ruler": {
+    "left_id": 0,
+    "right_id": 1,
+    "marker_size_m": 0.15,
+    "center_distance_m": 0.80,
+    "pixels_per_meter": 300.0
+  },
+  "roi_polygon_norm": null
+}

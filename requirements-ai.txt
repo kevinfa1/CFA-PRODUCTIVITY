@@ -1,0 +1,7 @@
+# Dependencias opcionales para auditoría multimodal (Gemini) y segmentación SAM 2
+google-genai>=1.0.0
+python-dotenv>=1.0.0
+
+# Para SAM 2 (requiere PyTorch + preferiblemente GPU CUDA):
+# pip install torch torchvision
+# pip install git+https://github.com/facebookresearch/sam2.git

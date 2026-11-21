@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+.pytest_cache/
+*.egg-info/
+dist/
+build/
+
+# Environment & secrets
+.env
+.env.local
+
+# Experiment outputs & local field photos (keep templates/docs tracked)
+outputs/
+*.log
+.DS_Store
+Thumbs.db

@@ -1,0 +1,484 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <meta name="theme-color" content="#0f172a" />
+  <title>CFA — Mini-Cámara Poka-Yoke (PoC)</title>
+  <style>
+    :root {
+      --bg: #0b1120;
+      --panel: #111827;
+      --text: #f8fafc;
+      --muted: #94a3b8;
+      --red: #ef4444;
+      --yellow: #f59e0b;
+      --green: #22c55e;
+      --accent: #38bdf8;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; font-family: system-ui, -apple-system, sans-serif; }
+    body { background: var(--bg); color: var(--text); height: 100dvh; display: flex; flex-direction: column; overflow: hidden; }
+
+    header {
+      padding: 10px 14px;
+      background: var(--panel);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid #1e293b;
+      font-size: 13px;
+    }
+    header .title { font-weight: 700; letter-spacing: 0.2px; }
+    header .timer {
+      font-variant-numeric: tabular-nums;
+      background: #1e293b;
+      padding: 4px 10px;
+      border-radius: 999px;
+      color: var(--accent);
+      font-weight: 600;
+    }
+
+    .viewport {
+      position: relative;
+      flex: 1;
+      background: #000;
+      overflow: hidden;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    video {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+    #ghostCanvas {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      pointer-events: none;
+      opacity: 0.28;
+    }
+
+    /* Marco semáforo Poka-Yoke */
+    .guide-frame {
+      position: absolute;
+      inset: 14px;
+      border: 4px solid var(--red);
+      border-radius: 16px;
+      pointer-events: none;
+      transition: border-color 0.15s ease, box-shadow 0.15s ease;
+    }
+    .guide-frame.yellow { border-color: var(--yellow); box-shadow: inset 0 0 18px rgba(245, 158, 11, 0.25); }
+    .guide-frame.green { border-color: var(--green); box-shadow: inset 0 0 24px rgba(34, 197, 94, 0.35); }
+
+    .status-pill {
+      position: absolute;
+      top: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 8px 18px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 15px;
+      letter-spacing: 0.3px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 2px solid var(--red);
+      color: #fff;
+      text-transform: uppercase;
+      white-space: nowrap;
+      pointer-events: none;
+    }
+    .status-pill.yellow { border-color: var(--yellow); color: #fde68a; }
+    .status-pill.green { border-color: var(--green); color: #bbf7d0; }
+
+    .metrics-bar {
+      position: absolute;
+      bottom: 24px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      gap: 10px;
+      background: rgba(15, 23, 42, 0.78);
+      padding: 5px 12px;
+      border-radius: 10px;
+      font-size: 11px;
+      color: var(--muted);
+      pointer-events: none;
+    }
+    .metrics-bar span strong { color: var(--text); }
+
+    .controls {
+      background: var(--panel);
+      border-top: 1px solid #1e293b;
+      padding: 10px 12px 14px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .row {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .row label { font-size: 12px; color: var(--muted); }
+    input[type="text"] {
+      background: #0f172a;
+      border: 1px solid #334155;
+      color: var(--text);
+      padding: 6px 8px;
+      border-radius: 8px;
+      font-size: 12px;
+      width: 115px;
+    }
+    input[type="range"] { flex: 1; accent-color: var(--accent); }
+    button, .file-btn {
+      border: none;
+      border-radius: 10px;
+      padding: 9px 12px;
+      font-size: 13px;
+      font-weight: 700;
+      cursor: pointer;
+      background: #1e293b;
+      color: var(--text);
+    }
+    .file-btn { display: inline-flex; align-items: center; gap: 6px; }
+    .file-btn input { display: none; }
+    button.primary { background: var(--green); color: #052e16; flex: 1; }
+    button.warn { background: #334155; color: #f8fafc; }
+    button.active { background: var(--accent); color: #082f49; }
+
+    #toast {
+      position: fixed;
+      bottom: 145px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(34, 197, 94, 0.95);
+      color: #052e16;
+      padding: 8px 16px;
+      border-radius: 999px;
+      font-weight: 800;
+      font-size: 13px;
+      display: none;
+      z-index: 30;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <div class="title">CFA Poka-Yoke PoC (1x)</div>
+    <div class="timer" id="timerDisplay">0.0 s</div>
+  </header>
+
+  <main class="viewport">
+    <video id="video" playsinline autoplay muted></video>
+    <canvas id="ghostCanvas"></canvas>
+    <div class="guide-frame" id="guideFrame"></div>
+    <div class="status-pill" id="statusPill">Iniciando cámara</div>
+    <div class="metrics-bar">
+      <span>Nitidez: <strong id="mSharp">--</strong></span>
+      <span>Luz: <strong id="mLight">--</strong></span>
+      <span>Nivel: <strong id="mTilt">--</strong></span>
+    </div>
+  </main>
+
+  <div id="toast">Foto guardada</div>
+
+  <section class="controls">
+    <div class="row">
+      <input type="text" id="wallTag" value="muro1_dia2" aria-label="Etiqueta de foto" />
+      <label class="file-btn">
+        Cargar Día 1 (Ghost)
+        <input type="file" id="ghostInput" accept="image/*" />
+      </label>
+      <button id="edgeToggle" type="button">Contornos: OFF</button>
+      <button id="sensorBtn" type="button">Activar nivel</button>
+    </div>
+
+    <div class="row">
+      <label for="opacityRange">Ghost <span id="opacityVal">28%</span></label>
+      <input type="range" id="opacityRange" min="0" max="60" value="28" />
+      <button id="autoToggle" type="button" class="active">Auto-disparo: ON</button>
+    </div>
+
+    <div class="row">
+      <button id="forceCaptureBtn" type="button" class="primary">Capturar ahora</button>
+      <button id="resetTimerBtn" type="button" class="warn">Reiniciar reloj</button>
+    </div>
+  </section>
+
+  <!-- Canvas ocultos para análisis en vivo y captura de alta resolución -->
+  <canvas id="analysisCanvas" width="160" height="120" style="display:none;"></canvas>
+  <canvas id="captureCanvas" style="display:none;"></canvas>
+
+  <script>
+    const video = document.getElementById("video");
+    const ghostCanvas = document.getElementById("ghostCanvas");
+    const ghostCtx = ghostCanvas.getContext("2d");
+    const analysisCanvas = document.getElementById("analysisCanvas");
+    const analysisCtx = analysisCanvas.getContext("2d", { willReadFrequently: true });
+    const captureCanvas = document.getElementById("captureCanvas");
+
+    const guideFrame = document.getElementById("guideFrame");
+    const statusPill = document.getElementById("statusPill");
+    const mSharp = document.getElementById("mSharp");
+    const mLight = document.getElementById("mLight");
+    const mTilt = document.getElementById("mTilt");
+    const timerDisplay = document.getElementById("timerDisplay");
+    const toast = document.getElementById("toast");
+
+    const wallTag = document.getElementById("wallTag");
+    const ghostInput = document.getElementById("ghostInput");
+    const opacityRange = document.getElementById("opacityRange");
+    const opacityVal = document.getElementById("opacityVal");
+    const edgeToggle = document.getElementById("edgeToggle");
+    const autoToggle = document.getElementById("autoToggle");
+    const sensorBtn = document.getElementById("sensorBtn");
+    const forceCaptureBtn = document.getElementById("forceCaptureBtn");
+    const resetTimerBtn = document.getElementById("resetTimerBtn");
+
+    let ghostImage = null;
+    let edgeMode = false;
+    let autoCaptureEnabled = true;
+    let tiltDeg = 0;
+    let sensorActive = false;
+    let greenSinceMs = null;
+    let lastAutoShotMs = 0;
+    let sessionStartMs = performance.now();
+
+    function showToast(msg) {
+      toast.textContent = msg;
+      toast.style.display = "block";
+      setTimeout(() => { toast.style.display = "none"; }, 2200);
+    }
+
+    async function initCamera() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1920 },
+            height: { ideal: 1080 },
+          },
+          audio: false,
+        });
+        video.srcObject = stream;
+
+        // Bloquear zoom en 1x si el navegador expone la capacidad
+        const track = stream.getVideoTracks()[0];
+        if (track && typeof track.getCapabilities === "function") {
+          const caps = track.getCapabilities();
+          if (caps.zoom) {
+            try { await track.applyConstraints({ advanced: [{ zoom: 1 }] }); } catch (_) {}
+          }
+        }
+        sessionStartMs = performance.now();
+        requestAnimationFrame(loop);
+      } catch (err) {
+        statusPill.textContent = "Sin acceso cámara";
+        alert("No se pudo abrir la cámara. Asegúrate de abrir esta página en HTTPS y otorgar permiso.");
+      }
+    }
+
+    function renderGhost() {
+      if (!ghostImage) return;
+      ghostCanvas.width = ghostImage.naturalWidth;
+      ghostCanvas.height = ghostImage.naturalHeight;
+      ghostCtx.clearRect(0, 0, ghostCanvas.width, ghostCanvas.height);
+      ghostCtx.drawImage(ghostImage, 0, 0);
+
+      if (edgeMode) {
+        const imgData = ghostCtx.getImageData(0, 0, ghostCanvas.width, ghostCanvas.height);
+        const d = imgData.data;
+        const w = ghostCanvas.width;
+        const h = ghostCanvas.height;
+        const gray = new Float32Array(w * h);
+        for (let i = 0; i < w * h; i++) {
+          gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+        }
+        const out = ghostCtx.createImageData(w, h);
+        for (let y = 1; y < h - 1; y++) {
+          for (let x = 1; x < w - 1; x++) {
+            const idx = y * w + x;
+            const gx = -gray[idx - w - 1] + gray[idx - w + 1] - 2 * gray[idx - 1] + 2 * gray[idx + 1] - gray[idx + w - 1] + gray[idx + w + 1];
+            const gy = -gray[idx - w - 1] - 2 * gray[idx - w] - gray[idx - w + 1] + gray[idx + w - 1] + 2 * gray[idx + w] + gray[idx + w + 1];
+            const mag = Math.min(255, Math.sqrt(gx * gx + gy * gy));
+            const p = idx * 4;
+            if (mag > 65) {
+              out.data[p] = 56;
+              out.data[p + 1] = 189;
+              out.data[p + 2] = 248;
+              out.data[p + 3] = 255;
+            } else {
+              out.data[p + 3] = 0;
+            }
+          }
+        }
+        ghostCtx.putImageData(out, 0, 0);
+      }
+    }
+
+    function computeFrameQuality() {
+      const w = analysisCanvas.width;
+      const h = analysisCanvas.height;
+      analysisCtx.drawImage(video, 0, 0, w, h);
+      const data = analysisCtx.getImageData(0, 0, w, h).data;
+      const gray = new Float32Array(w * h);
+      let sumLuma = 0;
+      for (let i = 0; i < w * h; i++) {
+        const g = 0.299 * data[i * 4] + 0.587 * data[i * 4 + 1] + 0.114 * data[i * 4 + 2];
+        gray[i] = g;
+        sumLuma += g;
+      }
+      const meanLuma = sumLuma / (w * h);
+
+      // Varianza Laplaciana simple como proxy de nitidez
+      let sumLap = 0;
+      let sumLapSq = 0;
+      let count = 0;
+      for (let y = 1; y < h - 1; y++) {
+        for (let x = 1; x < w - 1; x++) {
+          const i = y * w + x;
+          const lap = -4 * gray[i] + gray[i - 1] + gray[i + 1] + gray[i - w] + gray[i + w];
+          sumLap += lap;
+          sumLapSq += lap * lap;
+          count++;
+        }
+      }
+      const meanLap = sumLap / count;
+      const sharpness = sumLapSq / count - meanLap * meanLap;
+      return { meanLuma, sharpness };
+    }
+
+    function capturePhoto(triggerType) {
+      if (!video.videoWidth) return;
+      const elapsedSec = ((performance.now() - sessionStartMs) / 1000).toFixed(1);
+      captureCanvas.width = video.videoWidth;
+      captureCanvas.height = video.videoHeight;
+      const ctx = captureCanvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, captureCanvas.width, captureCanvas.height);
+
+      const now = new Date();
+      const stamp = now.toISOString().replace(/[-:T]/g, "").slice(0, 15);
+      const safeTag = (wallTag.value || "muro").replace(/[^a-zA-Z0-9_-]/g, "_");
+      const filename = `${safeTag}_${stamp}_${elapsedSec}s.jpg`;
+
+      captureCanvas.toBlob((blob) => {
+        if (!blob) return;
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
+        showToast(`${triggerType} OK (${elapsedSec}s)`);
+        sessionStartMs = performance.now();
+      }, "image/jpeg", 0.94);
+    }
+
+    function loop() {
+      const now = performance.now();
+      timerDisplay.textContent = `${((now - sessionStartMs) / 1000).toFixed(1)} s`;
+
+      if (video.readyState >= 2) {
+        const { meanLuma, sharpness } = computeFrameQuality();
+        mSharp.textContent = Math.round(sharpness);
+        mLight.textContent = Math.round(meanLuma);
+        mTilt.textContent = sensorActive ? `${Math.round(tiltDeg)}°` : "N/A";
+
+        let state = "green";
+        let prompt = "¡Perfecto, quieto!";
+
+        if (meanLuma < 45) {
+          state = "red";
+          prompt = "Falta luz";
+        } else if (meanLuma > 235) {
+          state = "red";
+          prompt = "Mucha luz";
+        } else if (sharpness < 60) {
+          state = "red";
+          prompt = "Enfoca y quieto";
+        } else if (sensorActive && Math.abs(tiltDeg) > 12) {
+          state = "yellow";
+          prompt = "Endereza teléfono";
+        } else if (sharpness < 110) {
+          state = "yellow";
+          prompt = "Mantén firme";
+        }
+
+        guideFrame.className = `guide-frame ${state}`;
+        statusPill.className = `status-pill ${state}`;
+        statusPill.textContent = prompt;
+
+        if (state === "green" && autoCaptureEnabled) {
+          if (greenSinceMs === null) greenSinceMs = now;
+          const stableMs = now - greenSinceMs;
+          if (stableMs >= 1000 && now - lastAutoShotMs > 3000) {
+            lastAutoShotMs = now;
+            greenSinceMs = null;
+            capturePhoto("Auto");
+          }
+        } else {
+          greenSinceMs = null;
+        }
+      }
+      requestAnimationFrame(loop);
+    }
+
+    ghostInput.addEventListener("change", (e) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      const img = new Image();
+      img.onload = () => {
+        ghostImage = img;
+        renderGhost();
+        showToast("Ghost Día 1 cargado");
+      };
+      img.src = URL.createObjectURL(file);
+    });
+
+    opacityRange.addEventListener("input", () => {
+      const val = Number(opacityRange.value);
+      opacityVal.textContent = `${val}%`;
+      ghostCanvas.style.opacity = (val / 100).toFixed(2);
+    });
+
+    edgeToggle.addEventListener("click", () => {
+      edgeMode = !edgeMode;
+      edgeToggle.textContent = `Contornos: ${edgeMode ? "ON" : "OFF"}`;
+      edgeToggle.classList.toggle("active", edgeMode);
+      renderGhost();
+    });
+
+    autoToggle.addEventListener("click", () => {
+      autoCaptureEnabled = !autoCaptureEnabled;
+      autoToggle.textContent = `Auto-disparo: ${autoCaptureEnabled ? "ON" : "OFF"}`;
+      autoToggle.classList.toggle("active", autoCaptureEnabled);
+    });
+
+    sensorBtn.addEventListener("click", async () => {
+      if (typeof DeviceOrientationEvent !== "undefined" && typeof DeviceOrientationEvent.requestPermission === "function") {
+        const res = await DeviceOrientationEvent.requestPermission();
+        if (res !== "granted") return;
+      }
+      window.addEventListener("deviceorientation", (ev) => {
+        if (typeof ev.gamma === "number") {
+          sensorActive = true;
+          // En modo retrato vertical, gamma mide la inclinación lateral
+          tiltDeg = ev.gamma;
+        }
+      });
+      sensorBtn.textContent = "Nivel: ON";
+      sensorBtn.classList.add("active");
+    });
+
+    forceCaptureBtn.addEventListener("click", () => capturePhoto("Manual"));
+    resetTimerBtn.addEventListener("click", () => { sessionStartMs = performance.now(); });
+
+    initCamera();
+  </script>
+</body>
+</html>
