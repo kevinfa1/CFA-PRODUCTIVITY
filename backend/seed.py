@@ -67,8 +67,8 @@ def seed_pilot_project(db: Session) -> Project:
         return existing
 
     project = Project(
-        name="Obra Piloto CFA — Apartamento 101",
-        location="Sector Norte, Frente Piloto",
+        name="Casa Las Flores",
+        location="Casa Las Flores",
         geofence_lat=14.6349,
         geofence_lng=-90.5069,
         geofence_radius_m=100.0,
@@ -78,35 +78,52 @@ def seed_pilot_project(db: Session) -> Project:
     db.add(project)
     db.flush()
 
-    crew_mamp = Crew(project_id=project.id, name="Cuadrilla Mampostería A", trade="mamposteria")
-    crew_rep = Crew(project_id=project.id, name="Cuadrilla Repello B", trade="repello")
+    crew_mamp = Crew(project_id=project.id, name="Planilla Casa Las Flores", trade="mamposteria")
+    crew_rep = Crew(project_id=project.id, name="Apoyo Casa Las Flores", trade="repello")
     db.add_all([crew_mamp, crew_rep])
     db.flush()
 
     workers_mamp = [
-        Worker(crew_id=crew_mamp.id, name="Jose Alcides Noguera", role="Albañil"),
         Worker(crew_id=crew_mamp.id, name="Moises Mendoza", role="Albañil"),
-        Worker(crew_id=crew_mamp.id, name="Manuel Reyes", role="Albañil"),
         Worker(crew_id=crew_mamp.id, name="Maycol Lara", role="Albañil"),
         Worker(crew_id=crew_mamp.id, name="Mario Blass", role="Albañil"),
         Worker(crew_id=crew_mamp.id, name="Jose Alexander Alegria", role="Albañil"),
-        Worker(crew_id=crew_mamp.id, name="Pablo Blass", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Celestino", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Pablo Blass", role="Ayudante"),
         Worker(crew_id=crew_mamp.id, name="Alberto Dormez", role="Ayudante"),
         Worker(crew_id=crew_mamp.id, name="Uriel Hernandez", role="Ayudante"),
         Worker(crew_id=crew_mamp.id, name="Nervin Hernandez", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Daniel Espinoza", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Fernando Jose Sandino", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Simon Bonilla", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Edwin Jimenez", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Cristhian Espinoza", role="Ayudante"),
     ]
-    workers_rep = [
-        Worker(crew_id=crew_rep.id, name="Jinner Palacios", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Daniel Espinoza", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Fernando Jose Sandino", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Simon Bonilla", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Edwin Jimenez", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Juan Carlos Perez", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Pedro Lopez", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Cristhian Espinoza", role="Ayudante"),
-        Worker(crew_id=crew_rep.id, name="Joel Gonzales", role="Ayudante"),
-    ]
-    db.add_all(workers_mamp + workers_rep)
+    workers_rep: list[Worker] = []
+    db.add_all(workers_mamp)
+
+    project_pia = Project(
+        name="Pia Pia",
+        location="Pia Pia",
+        geofence_lat=14.6349,
+        geofence_lng=-90.5069,
+        geofence_radius_m=100.0,
+        north_offset_deg=0.0,
+        floorplan_svg=PILOT_FLOORPLAN_SVG,
+    )
+    db.add(project_pia)
+    db.flush()
+
+    crew_pia = Crew(project_id=project_pia.id, name="Planilla Pia Pia", trade="mamposteria")
+    db.add(crew_pia)
+    db.flush()
+    db.add_all(
+        [
+            Worker(crew_id=crew_pia.id, name="Manuel Reyes", role="Albañil"),
+            Worker(crew_id=crew_pia.id, name="Jose Alcides Noguera", role="Albañil"),
+            Worker(crew_id=crew_pia.id, name="Gabriel Mena", role="Albañil"),
+        ]
+    )
     db.flush()
 
     wall_specs = [

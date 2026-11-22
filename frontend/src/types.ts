@@ -151,14 +151,20 @@ export interface DashboardData {
   }>;
 }
 
+export type AttendanceStatus = "presente" | "parcial" | "ausente";
+
 export interface AttendanceEntryPayload {
   worker_id?: number | null;
   worker_name: string;
   role: WorkerRole;
-  status: "presente" | "parcial" | "ausente";
+  status: AttendanceStatus;
   normal_hours: number;
   extra_hours: number;
   reason: string;
+}
+
+export interface AttendanceDraftEntry extends Omit<AttendanceEntryPayload, "status"> {
+  status: AttendanceStatus | null;
 }
 
 export interface AttendanceLog {

@@ -1,4 +1,4 @@
-import type { AttendanceEntryPayload, WorkerRole } from "../types";
+import type { AttendanceDraftEntry, WorkerRole } from "../types";
 
 export const ABSENCE_REASONS = ["Falta", "Enfermedad", "Permiso", "Otro"] as const;
 export const PARTIAL_HOURS_OPTIONS = [4, 6] as const;
@@ -21,6 +21,7 @@ export function normalizeWorkerRole(role: string | undefined | null): WorkerRole
 
 export interface AttendanceSummary {
   totalWorkers: number;
+  unmarkedCount: number;
   presentCount: number;
   partialCount: number;
   absentCount: number;
@@ -31,7 +32,8 @@ export interface AttendanceSummary {
   ayudantesPresent: number;
 }
 
-export function summarizeAttendance(entries: AttendanceEntryPayload[]): AttendanceSummary {
+export function summarizeAttendance(entries: AttendanceDraftEntry[]): AttendanceSummary {
+  let unmarkedCount = 0;
   let presentCount = 0;
   let partialCount = 0;
   let absentCount = 0;
@@ -43,7 +45,7 @@ export function summarizeAttendance(entries: AttendanceEntryPayload[]): Attendan
 
   for (const e of entries) {
     const role = normalizeWorkerRole(e.role);
-    const isPresent = e.status !== "ausente";
+    const isPresent = e.status === "presente" || e.status === "parcial";
 
     if (role === "Albañil") {
       albanilesTotal += 1;
@@ -53,7 +55,9 @@ export function summarizeAttendance(entries: AttendanceEntryPayload[]): Attendan
       if (isPresent) ayudantesPresent += 1;
     }
 
-    if (e.status === "presente") {
+    if (e.status === null) {
+      unmarkedCount += 1;
+    } else if (e.status === "presente") {
       presentCount += 1;
       totalHH += e.normal_hours + e.extra_hours;
     } else if (e.status === "parcial") {
@@ -67,6 +71,7 @@ export function summarizeAttendance(entries: AttendanceEntryPayload[]): Attendan
 
   return {
     totalWorkers: entries.length,
+    unmarkedCount,
     presentCount,
     partialCount,
     absentCount,

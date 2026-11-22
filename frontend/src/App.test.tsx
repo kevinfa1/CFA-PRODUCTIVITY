@@ -70,7 +70,7 @@ describe("App — Inicio de sesión y vista exclusiva de Asistencias", () => {
     await user.click(screen.getByRole("button", { name: /Entrar a Asistencia/i }));
 
     await screen.findByText("Carlos Méndez");
-    expect(screen.getByText(/Lista global de la obra/i)).toBeInTheDocument();
+    expect(screen.getByText(/Lista global —/i)).toBeInTheDocument();
 
     // No deben mostrarse los demás módulos por el momento
     expect(screen.queryByText(/Tablero y Aprobación/i)).not.toBeInTheDocument();

@@ -3,6 +3,7 @@ import { api } from "../api";
 import { offlineDb } from "../db";
 import {
   WORKER_ROLES,
+  type AttendanceDraftEntry,
   type AttendanceEntryPayload,
   type AttendanceLog,
   type Crew,
@@ -86,7 +87,7 @@ function IconPin() {
 function buildGlobalProjectEntries(
   crews: Crew[],
   existingLog?: AttendanceLog
-): AttendanceEntryPayload[] {
+): AttendanceDraftEntry[] {
   const existingByName = new Map<string, AttendanceEntryPayload>();
   if (existingLog) {
     for (const e of existingLog.entries) {
@@ -99,7 +100,7 @@ function buildGlobalProjectEntries(
   }
 
   const seen = new Set<string>();
-  const result: AttendanceEntryPayload[] = [];
+  const result: AttendanceDraftEntry[] = [];
 
   for (const crew of crews) {
     for (const w of crew.workers) {
@@ -112,12 +113,13 @@ function buildGlobalProjectEntries(
       if (saved) {
         result.push({ ...saved, worker_id: w.id, role: normalizeWorkerRole(w.role) });
       } else {
+        // Por defecto sin ninguna casilla marcada para obligar al maestro a registrar cada trabajador
         result.push({
           worker_id: w.id,
           worker_name: w.name,
           role: normalizeWorkerRole(w.role),
-          status: "presente",
-          normal_hours: 8,
+          status: null,
+          normal_hours: 0,
           extra_hours: 0,
           reason: "",
         });
@@ -125,7 +127,6 @@ function buildGlobalProjectEntries(
     }
   }
 
-  // Conservar trabajadores eventuales que estuvieran en el registro previo aunque no estén en catálogo
   if (existingLog) {
     for (const e of existingLog.entries) {
       const key = e.worker_name.trim().toLowerCase();
@@ -145,14 +146,18 @@ function buildGlobalProjectEntries(
 
 export function AttendanceView({
   project,
+  projects = [],
+  onSelectProject,
   onQueueChanged,
 }: {
   project: Project;
+  projects?: Project[];
+  onSelectProject?: (projectId: number) => void;
   onQueueChanged: () => void;
 }) {
   const [crews, setCrews] = useState<Crew[]>([]);
   const [workDate, setWorkDate] = useState(() => new Date().toISOString().slice(0, 10));
-  const [entries, setEntries] = useState<AttendanceEntryPayload[]>([]);
+  const [entries, setEntries] = useState<AttendanceDraftEntry[]>([]);
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
 
   const [step, setStep] = useState<WizardStep>(1);
@@ -191,9 +196,9 @@ export function AttendanceView({
     };
   }, [groupPhotoUrl]);
 
-  // ID técnico principal del proyecto para compatibilidad con el endpoint de almacenamiento
   const primaryCrewId = crews[0]?.id ?? 1;
   const summary = useMemo(() => summarizeAttendance(entries), [entries]);
+  const allMarked = entries.length > 0 && summary.unmarkedCount === 0;
 
   const validateGps = (silent = false) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -243,6 +248,9 @@ export function AttendanceView({
   };
 
   useEffect(() => {
+    setSavedBanner(null);
+    setStep(1);
+    setGroupPhotoBlob(undefined);
     void loadGlobalProjectAttendance(workDate, false);
     validateGps(true);
   }, [project.id]);
@@ -264,22 +272,8 @@ export function AttendanceView({
       setEntries(buildGlobalProjectEntries(crews, prevLog));
       notify(`Lista copiada del ${prevLog.work_date}`);
     } else {
-      handleMarkAllPresent();
+      notify("No hay registro previo para copiar. Marque cada trabajador.");
     }
-  };
-
-  const handleMarkAllPresent = () => {
-    triggerHaptic(20);
-    setEntries((prev) =>
-      prev.map((e) => ({
-        ...e,
-        status: "presente",
-        normal_hours: 8,
-        extra_hours: 0,
-        reason: "",
-      }))
-    );
-    notify("Todo el personal marcado Presente (8.0 HH)");
   };
 
   const updateWorkerStatus = (idx: number, status: "presente" | "parcial" | "ausente") => {
@@ -336,15 +330,15 @@ export function AttendanceView({
           worker_id: created.id ?? null,
           worker_name: trimmed,
           role: newWorkerRole,
-          status: "presente",
-          normal_hours: 8,
+          status: null,
+          normal_hours: 0,
           extra_hours: 0,
           reason: "",
         },
       ]);
       setNewWorkerName("");
       setShowAddWorker(false);
-      notify(`Agregado al proyecto: ${trimmed} (${newWorkerRole})`);
+      notify(`Agregado a ${project.name}: ${trimmed} (${newWorkerRole})`);
       await loadGlobalProjectAttendance(workDate, true);
     } catch {
       setEntries((prev) => [
@@ -353,8 +347,8 @@ export function AttendanceView({
           worker_id: null,
           worker_name: trimmed,
           role: newWorkerRole,
-          status: "presente",
-          normal_hours: 8,
+          status: null,
+          normal_hours: 0,
           extra_hours: 0,
           reason: "",
         },
@@ -397,19 +391,26 @@ export function AttendanceView({
   };
 
   const handleSave = async () => {
-    if (saving) return;
+    if (saving || !allMarked) return;
     setSaving(true);
     triggerHaptic(35);
+
+    const finalizedEntries: AttendanceEntryPayload[] = entries.map((e) => ({
+      worker_id: e.worker_id,
+      worker_name: e.worker_name,
+      role: normalizeWorkerRole(e.role),
+      status: e.status ?? "ausente",
+      normal_hours: e.normal_hours,
+      extra_hours: e.extra_hours,
+      reason: e.reason,
+    }));
 
     const payload = {
       crew_id: primaryCrewId,
       work_date: workDate,
       inside_geofence: insideGeo,
       distance_m: distanceM,
-      entries: entries.map((e) => ({
-        ...e,
-        role: normalizeWorkerRole(e.role),
-      })),
+      entries: finalizedEntries,
     };
 
     try {
@@ -424,7 +425,7 @@ export function AttendanceView({
         workDate,
         insideGeofence: insideGeo,
         distanceM,
-        entries: payload.entries,
+        entries: finalizedEntries,
         groupPhotoBlob,
         createdAt: new Date().toISOString(),
       });
@@ -465,6 +466,26 @@ export function AttendanceView({
           </button>
         </div>
 
+        {/* Selector rápido de proyecto si hay más de 1 (Casa Las Flores / Pia Pia) */}
+        {projects.length > 1 && onSelectProject && (
+          <div className="att-project-switch" role="group" aria-label="Seleccionar obra">
+            {projects.map((p) => (
+              <button
+                key={p.id}
+                type="button"
+                className={`att-project-btn ${p.id === project.id ? "active" : ""}`}
+                aria-pressed={p.id === project.id}
+                onClick={() => {
+                  triggerHaptic(15);
+                  onSelectProject(p.id);
+                }}
+              >
+                {p.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         <div className="att-hero-meta">
           <label className="att-date-chip" htmlFor="att-work-date">
             <span>{formatSpanishDate(workDate)}</span>
@@ -500,7 +521,7 @@ export function AttendanceView({
         </div>
       )}
 
-      {/* Indicador Guiado Directo de 3 Pasos (Sin selección de cuadrilla) */}
+      {/* Indicador Guiado de 3 Pasos */}
       {!savedBanner && (
         <nav className="att-stepper" aria-label="Pasos de asistencia">
           <button
@@ -516,7 +537,8 @@ export function AttendanceView({
             id="step-btn-2"
             type="button"
             className={`att-step-btn ${step === 2 ? "active" : step > 2 ? "done" : ""}`}
-            onClick={() => setStep(2)}
+            disabled={!allMarked}
+            onClick={() => allMarked && setStep(2)}
           >
             <span className="att-step-num">{step > 2 ? "✓" : "2"}</span>
             <span>Foto Grupal</span>
@@ -525,7 +547,8 @@ export function AttendanceView({
             id="step-btn-3"
             type="button"
             className={`att-step-btn ${step === 3 ? "active" : ""}`}
-            onClick={() => setStep(3)}
+            disabled={!allMarked}
+            onClick={() => allMarked && setStep(3)}
           >
             <span className="att-step-num">3</span>
             <span>Guardar</span>
@@ -577,16 +600,18 @@ export function AttendanceView({
       )}
 
       {/* =================================================================
-          PASO 1: LISTA GLOBAL DEL PROYECTO (1 TOQUE)
+          PASO 1: LISTA GLOBAL DEL PROYECTO (OBLIGATORIO MARCAR CADA UNO)
          ================================================================= */}
       {!savedBanner && step === 1 && (
         <>
           <div className="att-card">
             <div className="att-section-head">
               <div>
-                <div className="att-section-title">Lista global de la obra</div>
+                <div className="att-section-title">Lista global — {project.name}</div>
                 <div className="att-section-sub">
-                  Todos inician como Presente (8h). Marque solo faltas o medios días.
+                  {summary.unmarkedCount > 0
+                    ? `Marque cada trabajador (faltan ${summary.unmarkedCount} por marcar).`
+                    : "Todos marcados. Listo para pasar a Foto Grupal."}
                 </div>
               </div>
               <a
@@ -628,14 +653,6 @@ export function AttendanceView({
                 Repetir ayer
               </button>
               <button
-                id="btn-all-present"
-                type="button"
-                className="att-action-chip"
-                onClick={handleMarkAllPresent}
-              >
-                Todos presentes
-              </button>
-              <button
                 id="btn-toggle-add-worker"
                 type="button"
                 className="att-action-chip"
@@ -648,7 +665,7 @@ export function AttendanceView({
             {/* Formulario compacto para agregar Albañil o Ayudante */}
             {showAddWorker && (
               <div className="att-add-box" aria-label="Agregar nuevo trabajador">
-                <div className="att-section-title">Agregar trabajador a la obra</div>
+                <div className="att-section-title">Agregar trabajador a {project.name}</div>
                 <input
                   id="input-new-worker-name"
                   className="att-text-input"
@@ -683,17 +700,19 @@ export function AttendanceView({
               </div>
             )}
 
-            {/* Lista global de trabajadores */}
+            {/* Lista global de trabajadores (sin casilla marcada por defecto) */}
             <div className="att-worker-list">
               {entries.map((entry, idx) => {
                 const role = normalizeWorkerRole(entry.role);
                 const workerHH =
-                  entry.status === "ausente" ? 0 : entry.normal_hours + entry.extra_hours;
+                  entry.status === "presente" || entry.status === "parcial"
+                    ? entry.normal_hours + entry.extra_hours
+                    : 0;
 
                 return (
                   <article
                     key={`${entry.worker_name}_${idx}`}
-                    className={`att-worker-card is-${entry.status}`}
+                    className={`att-worker-card ${entry.status ? `is-${entry.status}` : "is-unmarked"}`}
                   >
                     <div className="att-worker-head">
                       <div>
@@ -702,7 +721,9 @@ export function AttendanceView({
                           {role}
                         </span>
                       </div>
-                      <span className="att-hh-tag">{workerHH.toFixed(1)} HH</span>
+                      <span className="att-hh-tag">
+                        {entry.status === null ? "Sin marcar" : `${workerHH.toFixed(1)} HH`}
+                      </span>
                     </div>
 
                     <div className="att-status-grid">
@@ -791,13 +812,15 @@ export function AttendanceView({
               id="btn-step1-next"
               type="button"
               className="att-btn-primary"
-              disabled={entries.length === 0}
+              disabled={!allMarked}
               onClick={() => {
                 triggerHaptic(20);
                 setStep(2);
               }}
             >
-              Siguiente: Foto Grupal ({summary.presentCount} presentes) →
+              {allMarked
+                ? `Siguiente: Foto Grupal (${summary.presentCount} presentes) →`
+                : `Marque todo el personal (faltan ${summary.unmarkedCount})`}
             </button>
           </div>
         </>
@@ -809,7 +832,7 @@ export function AttendanceView({
       {!savedBanner && step === 2 && (
         <>
           <div className="att-card">
-            <div className="att-section-title">Foto grupal del proyecto</div>
+            <div className="att-section-title">Foto grupal — {project.name}</div>
 
             <div className="att-photo-guide">
               <div className="att-guide-count">
@@ -904,9 +927,9 @@ export function AttendanceView({
           <div className="att-card">
             <div className="att-section-head">
               <div>
-                <div className="att-section-title">Resumen global del proyecto</div>
+                <div className="att-section-title">Resumen global — {project.name}</div>
                 <div className="att-section-sub">
-                  {project.name} · {formatSpanishDate(workDate)}
+                  {formatSpanishDate(workDate)}
                 </div>
               </div>
             </div>
@@ -960,7 +983,7 @@ export function AttendanceView({
               </thead>
               <tbody>
                 {entries.map((e, i) => {
-                  const hh = e.status === "ausente" ? 0 : e.normal_hours + e.extra_hours;
+                  const hh = e.status === "ausente" || e.status === null ? 0 : e.normal_hours + e.extra_hours;
                   return (
                     <tr key={`${e.worker_name}_${i}`}>
                       <td>
@@ -968,7 +991,7 @@ export function AttendanceView({
                         {e.reason ? <div style={{ fontSize: 12, color: "#7f1d1d" }}>{e.reason}</div> : null}
                       </td>
                       <td>{normalizeWorkerRole(e.role)}</td>
-                      <td style={{ textTransform: "capitalize", fontWeight: 700 }}>{e.status}</td>
+                      <td style={{ textTransform: "capitalize", fontWeight: 700 }}>{e.status ?? "Sin marcar"}</td>
                       <td style={{ textAlign: "right", fontWeight: 700 }}>{hh.toFixed(1)}</td>
                     </tr>
                   );
@@ -1003,7 +1026,7 @@ export function AttendanceView({
       {/* Historial reciente del proyecto */}
       <div className="att-card">
         <div className="att-section-head">
-          <div className="att-section-title">Historial del Proyecto ({logs.length})</div>
+          <div className="att-section-title">Historial de {project.name} ({logs.length})</div>
           <button
             id="btn-toggle-history"
             type="button"

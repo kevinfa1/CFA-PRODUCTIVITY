@@ -406,6 +406,11 @@
   gap: 10px;
 }
 
+.att-worker-card.is-unmarked {
+  border-color: #64748b;
+  background: #ffffff;
+}
+
 .att-worker-card.is-presente {
   border-color: var(--att-green);
 }
@@ -418,6 +423,31 @@
 .att-worker-card.is-ausente {
   border-color: var(--att-red);
   background: #fef2f2;
+}
+
+.att-project-switch {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.att-project-btn {
+  min-height: 46px;
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: 2px solid rgba(255, 255, 255, 0.35);
+  background: #16325b;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  text-align: center;
+}
+
+.att-project-btn.active {
+  background: #f59e0b;
+  border-color: #f59e0b;
+  color: #0b1f3a;
 }
 
 .att-worker-head {

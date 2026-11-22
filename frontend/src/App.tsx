@@ -20,10 +20,13 @@ function loadStoredSession(): AuthSession | null {
 
 export function App() {
   const [session, setSession] = useState<AuthSession | null>(() => loadStoredSession());
-  const [project, setProject] = useState<Project | null>(null);
+  const [projects, setProjects] = useState<Project[]>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<number | null>(null);
   const [pendingOfflineCount, setPendingOfflineCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const project = projects.find((p) => p.id === selectedProjectId) ?? projects[0] ?? null;
 
   const refreshQueueCount = async () => {
     const [c, a] = await Promise.all([
@@ -48,12 +51,16 @@ export function App() {
 
     const bootstrap = async () => {
       try {
-        const projects = await api.listProjects();
-        if (projects.length > 0) {
-          setProject(projects[0]);
+        const list = await api.listProjects();
+        if (list.length > 0) {
+          setProjects(list);
+          setSelectedProjectId((prev) => prev ?? list[0].id);
         } else {
           const pilot = await api.seedPilot();
-          setProject(pilot);
+          const refreshed = await api.listProjects();
+          const finalList = refreshed.length > 0 ? refreshed : [pilot];
+          setProjects(finalList);
+          setSelectedProjectId(finalList[0].id);
         }
       } catch (err) {
         setError(`No se pudo conectar al backend FastAPI: ${(err as Error).message}`);
@@ -84,7 +91,8 @@ export function App() {
       // ignore
     }
     setSession(null);
-    setProject(null);
+    setProjects([]);
+    setSelectedProjectId(null);
   };
 
   if (!session) {
@@ -126,7 +134,12 @@ export function App() {
         {!project && !error && <div className="card">Cargando proyecto...</div>}
 
         {project && (
-          <AttendanceView project={project} onQueueChanged={() => void refreshQueueCount()} />
+          <AttendanceView
+            project={project}
+            projects={projects}
+            onSelectProject={setSelectedProjectId}
+            onQueueChanged={() => void refreshQueueCount()}
+          />
         )}
       </main>
     </div>

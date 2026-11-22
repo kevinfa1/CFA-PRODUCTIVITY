@@ -66,7 +66,7 @@ export const api = {
         ),
 
   getCrews: (projectId: number) =>
-    isStaticPagesHost() ? demoFallback.getCrews() : jsonFetch<Crew[]>(`/api/projects/${projectId}/crews`),
+    isStaticPagesHost() ? demoFallback.getCrews(projectId) : jsonFetch<Crew[]>(`/api/projects/${projectId}/crews`),
   addWorker: (crewId: number, name: string, role: WorkerRole) =>
     isStaticPagesHost()
       ? demoFallback.addWorker(crewId, name, role)
@@ -163,7 +163,7 @@ export const api = {
     }),
 
   listAttendance: (projectId: number) =>
-    isStaticPagesHost() ? demoFallback.listAttendance() : jsonFetch<AttendanceLog[]>(`/api/projects/${projectId}/attendance`),
+    isStaticPagesHost() ? demoFallback.listAttendance(projectId) : jsonFetch<AttendanceLog[]>(`/api/projects/${projectId}/attendance`),
 
   saveAttendance: async (
     projectId: number,
