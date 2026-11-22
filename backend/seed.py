@@ -84,13 +84,27 @@ def seed_pilot_project(db: Session) -> Project:
     db.flush()
 
     workers_mamp = [
-        Worker(crew_id=crew_mamp.id, name="Carlos Méndez", role="Albañil"),
-        Worker(crew_id=crew_mamp.id, name="José López", role="Albañil"),
-        Worker(crew_id=crew_mamp.id, name="Luis Morales", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Jose Alcides Noguera", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Moises Mendoza", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Manuel Reyes", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Maycol Lara", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Mario Blass", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Jose Alexander Alegria", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Pablo Blass", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="Alberto Dormez", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Uriel Hernandez", role="Ayudante"),
+        Worker(crew_id=crew_mamp.id, name="Nervin Hernandez", role="Ayudante"),
     ]
     workers_rep = [
-        Worker(crew_id=crew_rep.id, name="Pedro Castillo", role="Albañil"),
-        Worker(crew_id=crew_rep.id, name="Miguel Ramírez", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Jinner Palacios", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Daniel Espinoza", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Fernando Jose Sandino", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Simon Bonilla", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Edwin Jimenez", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Juan Carlos Perez", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Pedro Lopez", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Cristhian Espinoza", role="Ayudante"),
+        Worker(crew_id=crew_rep.id, name="Joel Gonzales", role="Ayudante"),
     ]
     db.add_all(workers_mamp + workers_rep)
     db.flush()
@@ -144,9 +158,9 @@ def seed_pilot_project(db: Session) -> Project:
         project_id=project.id,
         crew_id=crew_mamp.id,
         work_date=today_str,
-        present_count=3,
-        total_workers=3,
-        total_hh=24.0,
+        present_count=len(workers_mamp),
+        total_workers=len(workers_mamp),
+        total_hh=float(len(workers_mamp) * 8),
         inside_geofence=True,
         distance_m=12.0,
     )
