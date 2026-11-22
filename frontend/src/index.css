@@ -94,6 +94,40 @@ body {
   gap: 16px;
 }
 
+/* Modo Día Corporativo de Alto Contraste para Asistencia en Campo (Sol Directo) */
+.app-shell--sunlight {
+  background: #edf1f5;
+  color: #0f172a;
+}
+
+.app-shell--sunlight .topbar {
+  background: #0b1f3a;
+  border-bottom: 3px solid #f59e0b;
+  color: #ffffff;
+  backdrop-filter: none;
+}
+
+.app-shell--sunlight .topbar .kpi-sub {
+  color: #e2e8f0;
+}
+
+.app-shell--sunlight .nav-pill {
+  background: #16325b;
+  color: #f8fafc;
+  border: 1.5px solid #335584;
+  min-height: 40px;
+}
+
+.app-shell--sunlight .nav-pill.active {
+  background: #f59e0b;
+  color: #0b1f3a;
+  border-color: #f59e0b;
+}
+
+.app-shell--sunlight .page-content {
+  padding: 12px 10px 28px;
+}
+
 .grid-2 {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(340px, 1fr));

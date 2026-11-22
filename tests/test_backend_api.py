@@ -89,7 +89,7 @@ def test_full_backend_workflow(tmp_path: Path) -> None:
             "inside_geofence": True,
             "distance_m": 15.0,
             "entries": [
-                {"worker_name": "Carlos Méndez", "role": "Oficial", "status": "presente", "normal_hours": 8, "extra_hours": 1},
+                {"worker_name": "Carlos Méndez", "role": "Albañil", "status": "presente", "normal_hours": 8, "extra_hours": 1},
                 {"worker_name": "Luis Morales", "role": "Ayudante", "status": "ausente", "normal_hours": 0, "extra_hours": 0, "reason": "Falta"},
             ],
         },

@@ -88,7 +88,7 @@ class Worker(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     crew_id: Mapped[int] = mapped_column(ForeignKey("crews.id", ondelete="CASCADE"), index=True)
     name: Mapped[str] = mapped_column(String(120), nullable=False)
-    role: Mapped[str] = mapped_column(String(60), default="Oficial")
+    role: Mapped[str] = mapped_column(String(60), default="Albañil")
     active: Mapped[bool] = mapped_column(Boolean, default=True)
 
     crew: Mapped["Crew"] = relationship(back_populates="workers")
@@ -138,7 +138,7 @@ class AttendanceEntry(Base):
     log_id: Mapped[int] = mapped_column(ForeignKey("attendance_logs.id", ondelete="CASCADE"), index=True)
     worker_id: Mapped[Optional[int]] = mapped_column(ForeignKey("workers.id", ondelete="SET NULL"), nullable=True)
     worker_name: Mapped[str] = mapped_column(String(120), nullable=False)
-    role: Mapped[str] = mapped_column(String(60), default="Oficial")
+    role: Mapped[str] = mapped_column(String(60), default="Albañil")
     status: Mapped[str] = mapped_column(String(20), default="presente")  # presente | parcial | ausente
     normal_hours: Mapped[float] = mapped_column(Float, default=8.0)
     extra_hours: Mapped[float] = mapped_column(Float, default=0.0)

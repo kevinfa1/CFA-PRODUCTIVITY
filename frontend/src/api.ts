@@ -1,4 +1,5 @@
 import { offlineDb } from "./db";
+import { demoFallback, isStaticPagesHost } from "./demoFallback";
 import type {
   AttendanceEntryPayload,
   AttendanceLog,
@@ -8,6 +9,7 @@ import type {
   FieldRouteResponse,
   Project,
   ScheduleItem,
+  WorkerRole,
 } from "./types";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
@@ -22,8 +24,8 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
 }
 
 export const api = {
-  seedPilot: () => jsonFetch<Project>("/api/projects/seed-pilot", { method: "POST" }),
-  listProjects: () => jsonFetch<Project[]>("/api/projects"),
+  seedPilot: () => (isStaticPagesHost() ? demoFallback.seedPilot() : jsonFetch<Project>("/api/projects/seed-pilot", { method: "POST" })),
+  listProjects: () => (isStaticPagesHost() ? demoFallback.listProjects() : jsonFetch<Project[]>("/api/projects")),
   updateProject: (id: number, body: Partial<Project>) =>
     jsonFetch<Project>(`/api/projects/${id}`, {
       method: "PATCH",
@@ -41,19 +43,25 @@ export const api = {
   },
 
   getDashboard: (projectId: number, workDate?: string) =>
-    jsonFetch<DashboardData>(
-      `/api/projects/${projectId}/dashboard${workDate ? `?work_date=${encodeURIComponent(workDate)}` : ""}`
-    ),
+    isStaticPagesHost()
+      ? demoFallback.getDashboard(projectId, workDate)
+      : jsonFetch<DashboardData>(
+          `/api/projects/${projectId}/dashboard${workDate ? `?work_date=${encodeURIComponent(workDate)}` : ""}`
+        ),
 
-  getCrews: (projectId: number) => jsonFetch<Crew[]>(`/api/projects/${projectId}/crews`),
-  addWorker: (crewId: number, name: string, role: string) =>
-    jsonFetch(`/api/crews/${crewId}/workers`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ name, role }),
-    }),
+  getCrews: (projectId: number) =>
+    isStaticPagesHost() ? demoFallback.getCrews() : jsonFetch<Crew[]>(`/api/projects/${projectId}/crews`),
+  addWorker: (crewId: number, name: string, role: WorkerRole) =>
+    isStaticPagesHost()
+      ? demoFallback.addWorker(crewId, name, role)
+      : jsonFetch(`/api/crews/${crewId}/workers`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ name, role }),
+        }),
 
-  getSchedule: (projectId: number) => jsonFetch<ScheduleItem[]>(`/api/projects/${projectId}/schedule`),
+  getSchedule: (projectId: number) =>
+    isStaticPagesHost() ? demoFallback.getSchedule() : jsonFetch<ScheduleItem[]>(`/api/projects/${projectId}/schedule`),
   saveSchedule: (
     projectId: number,
     items: Array<{ element_id: number; crew_id: number | null; walk_order: number; active: boolean; turn_hint: string }>
@@ -65,6 +73,7 @@ export const api = {
     }),
 
   getFieldRoute: async (projectId: number, workDate?: string): Promise<FieldRouteResponse> => {
+    if (isStaticPagesHost()) return demoFallback.getFieldRoute(projectId, workDate);
     const cacheKey = `route_${projectId}`;
     try {
       const route = await jsonFetch<FieldRouteResponse>(
@@ -80,9 +89,11 @@ export const api = {
   },
 
   listApprovals: (projectId: number, status?: string) =>
-    jsonFetch<DailyCapture[]>(
-      `/api/projects/${projectId}/approvals${status ? `?status=${encodeURIComponent(status)}` : ""}`
-    ),
+    isStaticPagesHost()
+      ? demoFallback.listApprovals()
+      : jsonFetch<DailyCapture[]>(
+          `/api/projects/${projectId}/approvals${status ? `?status=${encodeURIComponent(status)}` : ""}`
+        ),
 
   approveCapture: (captureId: number, decision: "approved" | "adjusted" | "rejected", approvedAreaM2?: number) =>
     jsonFetch<DailyCapture>(`/api/captures/${captureId}/approve`, {
@@ -135,7 +146,8 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  listAttendance: (projectId: number) => jsonFetch<AttendanceLog[]>(`/api/projects/${projectId}/attendance`),
+  listAttendance: (projectId: number) =>
+    isStaticPagesHost() ? demoFallback.listAttendance() : jsonFetch<AttendanceLog[]>(`/api/projects/${projectId}/attendance`),
 
   saveAttendance: async (
     projectId: number,
@@ -148,6 +160,9 @@ export const api = {
     },
     groupPhotoBlob?: Blob
   ) => {
+    if (isStaticPagesHost()) {
+      return demoFallback.saveAttendance(projectId, payload, groupPhotoBlob);
+    }
     const log = await jsonFetch<AttendanceLog>(`/api/projects/${projectId}/attendance`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },

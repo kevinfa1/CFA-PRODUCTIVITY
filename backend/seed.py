@@ -84,12 +84,12 @@ def seed_pilot_project(db: Session) -> Project:
     db.flush()
 
     workers_mamp = [
-        Worker(crew_id=crew_mamp.id, name="Carlos Méndez", role="Oficial"),
-        Worker(crew_id=crew_mamp.id, name="José López", role="Oficial"),
+        Worker(crew_id=crew_mamp.id, name="Carlos Méndez", role="Albañil"),
+        Worker(crew_id=crew_mamp.id, name="José López", role="Albañil"),
         Worker(crew_id=crew_mamp.id, name="Luis Morales", role="Ayudante"),
     ]
     workers_rep = [
-        Worker(crew_id=crew_rep.id, name="Pedro Castillo", role="Oficial"),
+        Worker(crew_id=crew_rep.id, name="Pedro Castillo", role="Albañil"),
         Worker(crew_id=crew_rep.id, name="Miguel Ramírez", role="Ayudante"),
     ]
     db.add_all(workers_mamp + workers_rep)

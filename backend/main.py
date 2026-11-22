@@ -400,7 +400,7 @@ def upsert_attendance(project_id: int, payload: AttendanceLogCreate, db: Session
     if not db.get(Project, project_id):
         raise HTTPException(status_code=404, detail="Proyecto no encontrado")
 
-    # Reemplazar registro del mismo día y cuadrilla si ya existía
+    # Reemplazar registro del mismo día y cuadrilla si ya existía (conservando foto si no se envía una nueva)
     existing = (
         db.query(AttendanceLog)
         .filter(
@@ -410,6 +410,7 @@ def upsert_attendance(project_id: int, payload: AttendanceLogCreate, db: Session
         )
         .first()
     )
+    previous_photo_path = existing.group_photo_path if existing else None
     if existing:
         db.delete(existing)
         db.flush()
@@ -429,6 +430,7 @@ def upsert_attendance(project_id: int, payload: AttendanceLogCreate, db: Session
         total_hh=total_hh,
         inside_geofence=payload.inside_geofence,
         distance_m=payload.distance_m,
+        group_photo_path=previous_photo_path,
     )
     db.add(log)
     db.flush()
@@ -438,6 +440,7 @@ def upsert_attendance(project_id: int, payload: AttendanceLogCreate, db: Session
 
     db.commit()
     db.refresh(log)
+    log.group_photo_path = _to_public_upload_url(log.group_photo_path)
     return log
 
 

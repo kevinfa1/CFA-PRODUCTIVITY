@@ -3,9 +3,23 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import List, Optional
+from typing import List, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+WorkerRole = Literal["Albañil", "Ayudante"]
+ALLOWED_WORKER_ROLES = ("Albañil", "Ayudante")
+
+
+def _normalize_worker_role(value: object) -> str:
+    if not isinstance(value, str):
+        raise ValueError("El cargo debe ser 'Albañil' o 'Ayudante'")
+    cleaned = value.strip().lower()
+    if cleaned in {"albañil", "albanil"}:
+        return "Albañil"
+    if cleaned == "ayudante":
+        return "Ayudante"
+    raise ValueError("Cargo no permitido. Solo se aceptan 'Albañil' o 'Ayudante'")
 
 
 class ProjectCreate(BaseModel):
@@ -87,7 +101,12 @@ class WallElementOut(BaseModel):
 
 class WorkerCreate(BaseModel):
     name: str
-    role: str = "Oficial"
+    role: WorkerRole = "Albañil"
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, value: object) -> str:
+        return _normalize_worker_role(value)
 
 
 class WorkerOut(BaseModel):
@@ -145,11 +164,16 @@ class ScheduleItemOut(BaseModel):
 class AttendanceEntryIn(BaseModel):
     worker_id: Optional[int] = None
     worker_name: str
-    role: str = "Oficial"
-    status: str = "presente"
+    role: WorkerRole = "Albañil"
+    status: Literal["presente", "parcial", "ausente"] = "presente"
     normal_hours: float = 8.0
     extra_hours: float = 0.0
     reason: str = ""
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def validate_role(cls, value: object) -> str:
+        return _normalize_worker_role(value)
 
 
 class AttendanceLogCreate(BaseModel):

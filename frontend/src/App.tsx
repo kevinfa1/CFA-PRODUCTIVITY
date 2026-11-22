@@ -57,7 +57,7 @@ export function App() {
   }, []);
 
   return (
-    <div className="app-shell">
+    <div className={`app-shell ${activeTab === "attendance" ? "app-shell--sunlight" : ""}`}>
       <header className="topbar">
         <div className="brand">
           <span className="brand-dot" />

@@ -27,11 +27,14 @@ export interface WallElement {
   status: "not_started" | "in_progress" | "completed";
 }
 
+export type WorkerRole = "Albañil" | "Ayudante";
+export const WORKER_ROLES: readonly WorkerRole[] = ["Albañil", "Ayudante"] as const;
+
 export interface Worker {
   id: number;
   crew_id: number;
   name: string;
-  role: string;
+  role: WorkerRole;
   active: boolean;
 }
 
@@ -151,7 +154,7 @@ export interface DashboardData {
 export interface AttendanceEntryPayload {
   worker_id?: number | null;
   worker_name: string;
-  role: string;
+  role: WorkerRole;
   status: "presente" | "parcial" | "ausente";
   normal_hours: number;
   extra_hours: number;
