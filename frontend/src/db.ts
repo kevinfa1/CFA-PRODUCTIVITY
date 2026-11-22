@@ -19,6 +19,8 @@ export interface OfflineCaptureQueueItem {
 export interface OfflineAttendanceQueueItem {
   id?: number;
   projectId: number;
+  projectName?: string;
+  registeredBy?: string;
   crewId: number;
   workDate: string;
   insideGeofence: boolean | null;

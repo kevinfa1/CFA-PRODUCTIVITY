@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api } from "../api";
+import { api, getAppsScriptUrl, setAppsScriptUrl } from "../api";
 import { offlineDb } from "../db";
+import { isStaticPagesHost } from "../demoFallback";
 import {
   WORKER_ROLES,
   type AttendanceDraftEntry,
@@ -13,6 +14,7 @@ import {
 import {
   ABSENCE_REASONS,
   PARTIAL_HOURS_OPTIONS,
+  buildAttendanceCsv,
   formatSpanishDate,
   haversineMeters,
   normalizeWorkerRole,
@@ -148,11 +150,15 @@ export function AttendanceView({
   project,
   projects = [],
   onSelectProject,
+  registeredBy = "Maestro de Obra",
+  isAdmin = false,
   onQueueChanged,
 }: {
   project: Project;
   projects?: Project[];
   onSelectProject?: (projectId: number) => void;
+  registeredBy?: string;
+  isAdmin?: boolean;
   onQueueChanged: () => void;
 }) {
   const [crews, setCrews] = useState<Crew[]>([]);
@@ -178,6 +184,8 @@ export function AttendanceView({
   const [saving, setSaving] = useState(false);
   const [savedBanner, setSavedBanner] = useState<{ offline: boolean; totalHH: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [scriptUrlInput, setScriptUrlInput] = useState(() => getAppsScriptUrl());
+  const [showScriptConfig, setShowScriptConfig] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimerRef = useRef<number | null>(null);
 
@@ -411,6 +419,8 @@ export function AttendanceView({
       inside_geofence: insideGeo,
       distance_m: distanceM,
       entries: finalizedEntries,
+      project_name: project.name,
+      registered_by: registeredBy,
     };
 
     try {
@@ -421,6 +431,8 @@ export function AttendanceView({
     } catch {
       await offlineDb.pendingAttendance.add({
         projectId: project.id,
+        projectName: project.name,
+        registeredBy,
         crewId: primaryCrewId,
         workDate,
         insideGeofence: insideGeo,
@@ -434,6 +446,21 @@ export function AttendanceView({
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleDownloadCsv = () => {
+    if (!isStaticPagesHost()) {
+      window.location.href = `/api/projects/${project.id}/attendance/export.csv`;
+      return;
+    }
+    const csv = buildAttendanceCsv(project.name, logs);
+    const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `cfa_asistencia_${project.name.toLowerCase().replace(/\s+/g, "_")}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   };
 
   const todayDone = logs.some((l) => l.work_date === workDate);
@@ -587,14 +614,14 @@ export function AttendanceView({
             >
               Editar lista global
             </button>
-            <a
+            <button
+              type="button"
               className="att-btn-secondary"
               style={{ flex: 1 }}
-              href={`/api/projects/${project.id}/attendance/export.csv`}
-              download
+              onClick={handleDownloadCsv}
             >
               Descargar CSV
-            </a>
+            </button>
           </div>
         </div>
       )}
@@ -614,13 +641,13 @@ export function AttendanceView({
                     : "Todos marcados. Listo para pasar a Foto Grupal."}
                 </div>
               </div>
-              <a
+              <button
+                type="button"
                 className="att-action-chip"
-                href={`/api/projects/${project.id}/attendance/export.csv`}
-                download
+                onClick={handleDownloadCsv}
               >
                 CSV Planilla
-              </a>
+              </button>
             </div>
 
             {/* Resumen en vivo de Albañiles, Ayudantes y HH */}
@@ -1062,6 +1089,54 @@ export function AttendanceView({
           </div>
         )}
       </div>
+      {/* Conexión Google Drive / Sheets (Apps Script) para Administradores */}
+      {isAdmin && (
+        <div className="att-card">
+          <div className="att-section-head">
+            <div>
+              <div className="att-section-title">Google Drive / Sheets (Apps Script)</div>
+              <div className="att-section-sub">
+                {getAppsScriptUrl()
+                  ? "Conectado: los registros y fotos se envían a tu Google Drive."
+                  : "Pendiente: pega aquí la URL /exec de tu Google Apps Script."}
+              </div>
+            </div>
+            <button
+              type="button"
+              className="att-action-chip"
+              onClick={() => setShowScriptConfig((v) => !v)}
+            >
+              {showScriptConfig ? "Cerrar" : "Configurar"}
+            </button>
+          </div>
+          {showScriptConfig && (
+            <div className="att-add-box">
+              <input
+                className="att-text-input"
+                type="url"
+                placeholder="https://script.google.com/macros/s/.../exec"
+                value={scriptUrlInput}
+                onChange={(e) => setScriptUrlInput(e.target.value)}
+              />
+              <button
+                type="button"
+                className="att-btn-primary"
+                onClick={() => {
+                  setAppsScriptUrl(scriptUrlInput);
+                  setShowScriptConfig(false);
+                  notify(
+                    scriptUrlInput.trim()
+                      ? "Conectado a Google Apps Script"
+                      : "Desconectado de Google Apps Script"
+                  );
+                }}
+              >
+                Guardar URL de Google Drive
+              </button>
+            </div>
+          )}
+        </div>
+      )}
     </section>
   );
 }

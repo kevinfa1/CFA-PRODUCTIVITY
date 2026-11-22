@@ -138,6 +138,8 @@ export function App() {
             project={project}
             projects={projects}
             onSelectProject={setSelectedProjectId}
+            registeredBy={session.display_name}
+            isAdmin={session.role === "admin"}
             onQueueChanged={() => void refreshQueueCount()}
           />
         )}

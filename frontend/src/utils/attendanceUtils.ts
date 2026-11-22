@@ -181,3 +181,70 @@ export async function stampCrewPhoto(file: File, meta: PhotoStampMeta): Promise<
     return file;
   }
 }
+
+export function blobToBase64(blob: Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = String(reader.result || "");
+      const idx = result.indexOf(",");
+      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    };
+    reader.onerror = () => reject(new Error("No se pudo leer la foto"));
+    reader.readAsDataURL(blob);
+  });
+}
+
+export function buildAttendanceCsv(projectName: string, logs: Array<{
+  work_date: string;
+  inside_geofence: boolean | null;
+  distance_m: number | null;
+  entries: Array<{
+    worker_name: string;
+    role: string;
+    status: string;
+    normal_hours: number;
+    extra_hours: number;
+    reason: string;
+  }>;
+}>): string {
+  const header = [
+    "fecha",
+    "proyecto",
+    "trabajador",
+    "cargo",
+    "estado",
+    "horas_normales",
+    "horas_extra",
+    "total_hh",
+    "motivo_ausencia",
+    "en_obra_100m",
+    "distancia_m",
+  ];
+  const rows: string[][] = [header];
+  for (const log of logs) {
+    const geo = log.inside_geofence === true ? "SI" : log.inside_geofence === false ? "NO" : "N/A";
+    const dist = log.distance_m != null ? String(Math.round(log.distance_m)) : "";
+    for (const e of log.entries) {
+      const hh = e.status === "ausente" ? 0 : e.normal_hours + e.extra_hours;
+      rows.push([
+        log.work_date,
+        projectName,
+        e.worker_name,
+        e.role,
+        e.status,
+        String(e.normal_hours),
+        String(e.extra_hours),
+        String(Math.round(hh * 100) / 100),
+        e.reason || "",
+        geo,
+        dist,
+      ]);
+    }
+  }
+  const csvBody = rows
+    .map((r) => r.map((cell) => `"${String(cell).replace(/"/g, '""')}"`).join(","))
+    .join("\n");
+  return "\ufeff" + csvBody;
+}
+

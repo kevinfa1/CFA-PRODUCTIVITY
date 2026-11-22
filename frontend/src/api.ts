@@ -12,8 +12,30 @@ import type {
   ScheduleItem,
   WorkerRole,
 } from "./types";
+import { blobToBase64 } from "./utils/attendanceUtils";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
+const APPS_SCRIPT_STORAGE_KEY = "cfa_apps_script_url_v1";
+
+export function getAppsScriptUrl(): string {
+  const envUrl = (import.meta.env.VITE_APPS_SCRIPT_URL as string | undefined) || "";
+  if (envUrl.trim()) return envUrl.trim();
+  try {
+    return (localStorage.getItem(APPS_SCRIPT_STORAGE_KEY) || "").trim();
+  } catch {
+    return "";
+  }
+}
+
+export function setAppsScriptUrl(url: string): void {
+  try {
+    const clean = url.trim();
+    if (clean) localStorage.setItem(APPS_SCRIPT_STORAGE_KEY, clean);
+    else localStorage.removeItem(APPS_SCRIPT_STORAGE_KEY);
+  } catch {
+    // ignore
+  }
+}
 
 async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, init);
@@ -173,12 +195,49 @@ export const api = {
       inside_geofence: boolean | null;
       distance_m: number | null;
       entries: AttendanceEntryPayload[];
+      project_name?: string;
+      registered_by?: string;
     },
     groupPhotoBlob?: Blob
   ) => {
+    const scriptUrl = getAppsScriptUrl();
+    if (scriptUrl) {
+      let photoBase64 = "";
+      let photoMime = "image/jpeg";
+      if (groupPhotoBlob) {
+        photoBase64 = await blobToBase64(groupPhotoBlob);
+        photoMime = groupPhotoBlob.type || "image/jpeg";
+      }
+      const res = await fetch(scriptUrl, {
+        method: "POST",
+        headers: { "Content-Type": "text/plain;charset=utf-8" },
+        body: JSON.stringify({
+          project_name: payload.project_name || `Proyecto #${projectId}`,
+          work_date: payload.work_date,
+          registered_by: payload.registered_by || "Maestro de Obra",
+          inside_geofence: payload.inside_geofence,
+          distance_m: payload.distance_m,
+          entries: payload.entries,
+          photo_base64: photoBase64,
+          photo_mime: photoMime,
+        }),
+      });
+      if (!res.ok) {
+        throw new Error(`Error Google Apps Script HTTP ${res.status}`);
+      }
+      const data = (await res.json()) as { ok?: boolean; error?: string; photo_url?: string };
+      if (!data.ok) {
+        throw new Error(data.error || "Error al guardar en Google Drive");
+      }
+      if (isStaticPagesHost()) {
+        return demoFallback.saveAttendance(projectId, payload, groupPhotoBlob);
+      }
+    }
+
     if (isStaticPagesHost()) {
       return demoFallback.saveAttendance(projectId, payload, groupPhotoBlob);
     }
+
     const log = await jsonFetch<AttendanceLog>(`/api/projects/${projectId}/attendance`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -240,6 +299,8 @@ export const api = {
             inside_geofence: item.insideGeofence,
             distance_m: item.distanceM,
             entries: item.entries,
+            project_name: item.projectName,
+            registered_by: item.registeredBy,
           },
           item.groupPhotoBlob
         );
