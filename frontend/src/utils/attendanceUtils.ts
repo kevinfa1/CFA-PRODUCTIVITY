@@ -106,7 +106,6 @@ export function triggerHaptic(ms = 20): void {
 
 export interface PhotoStampMeta {
   projectName: string;
-  crewName: string;
   workDate: string;
   presentCount: number;
   totalWorkers: number;
@@ -117,7 +116,7 @@ export interface PhotoStampMeta {
 
 /**
  * Comprime la foto para redes móviles de obra y estampa un sello corporativo
- * de alto contraste (proyecto, cuadrilla, fecha/hora, conteo Albañil/Ayudante y GPS).
+ * de alto contraste (proyecto, fecha/hora, conteo global Albañil/Ayudante y GPS).
  */
 export async function stampCrewPhoto(file: File, meta: PhotoStampMeta): Promise<Blob> {
   if (typeof document === "undefined" || typeof createImageBitmap === "undefined") {
@@ -159,7 +158,7 @@ export async function stampCrewPhoto(file: File, meta: PhotoStampMeta): Promise<
 
     ctx.fillStyle = "#FFFFFF";
     ctx.font = `700 ${titleSize}px "IBM Plex Sans", system-ui, sans-serif`;
-    ctx.fillText(`CFA · ${meta.crewName}`, padX, y0 + Math.round(bannerHeight * 0.42));
+    ctx.fillText(`CFA · ${meta.projectName}`, padX, y0 + Math.round(bannerHeight * 0.42));
 
     ctx.fillStyle = "#FDE68A";
     ctx.font = `600 ${subSize}px "IBM Plex Sans", system-ui, sans-serif`;

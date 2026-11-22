@@ -41,7 +41,7 @@ const mockCrews: Crew[] = [
   },
 ];
 
-describe("AttendanceView — Flujo guiado para Maestro de Obra (Samsung / Sol Directo)", () => {
+describe("AttendanceView — Asistencia Global por Proyecto (Samsung / Sol Directo)", () => {
   const onQueueChanged = vi.fn();
 
   beforeEach(() => {
@@ -55,9 +55,9 @@ describe("AttendanceView — Flujo guiado para Maestro de Obra (Samsung / Sol Di
       project_id: 1,
       crew_id: 10,
       work_date: "2026-11-22",
-      present_count: 2,
-      total_workers: 3,
-      total_hh: 13,
+      present_count: 4,
+      total_workers: 5,
+      total_hh: 29,
       inside_geofence: true,
       distance_m: 10,
       group_photo_path: "/uploads/group.jpg",
@@ -91,13 +91,16 @@ describe("AttendanceView — Flujo guiado para Maestro de Obra (Samsung / Sol Di
     vi.clearAllMocks();
   });
 
-  it("inicia en Modo Sol Alto ON y permite solo cargos Albañil y Ayudante", async () => {
+  it("muestra todo el personal del proyecto sin selector de cuadrillas, inicia en Sol Alto ON y solo permite Albañil/Ayudante", async () => {
     const user = userEvent.setup();
     render(<AttendanceView project={mockProject} onQueueChanged={onQueueChanged} />);
 
+    // Todos los trabajadores de ambas cuadrillas aparecen directamente en la lista global
     await screen.findByText("Carlos Méndez");
+    expect(screen.getByText("Pedro Castillo")).toBeInTheDocument();
+    expect(screen.getByText("Miguel Ramírez")).toBeInTheDocument();
+    expect(screen.queryByText(/Seleccione la cuadrilla/i)).not.toBeInTheDocument();
 
-    // Modo Sol Alto activado por defecto para lectura bajo sol directo
     const moduleEl = document.getElementById("attendance-module");
     expect(moduleEl).toHaveClass("sun-boost");
 
@@ -119,63 +122,60 @@ describe("AttendanceView — Flujo guiado para Maestro de Obra (Samsung / Sol Di
     await screen.findByText("Juan Gómez");
   });
 
-  it("completa el flujo guiado de 3 pasos (1-toque lista -> foto cámara -> confirmar y guardar)", async () => {
+  it("completa la asistencia global del proyecto (lista directa -> foto grupal -> guardar)", async () => {
     const user = userEvent.setup();
     render(<AttendanceView project={mockProject} onQueueChanged={onQueueChanged} />);
 
     await screen.findByText("Carlos Méndez");
 
-    // Todos inician Presentes: 2/2 Albañiles, 1/1 Ayudantes, 24.0 HH
-    const kpiStrip = screen.getByLabelText("Resumen de cuadrilla");
+    // 3 Albañiles + 2 Ayudantes = 5 presentes = 40.0 HH iniciales
+    const kpiStrip = screen.getByLabelText("Resumen global del proyecto");
+    expect(kpiStrip).toHaveTextContent("3/3");
     expect(kpiStrip).toHaveTextContent("2/2");
-    expect(kpiStrip).toHaveTextContent("1/1");
-    expect(kpiStrip).toHaveTextContent("24.0");
+    expect(kpiStrip).toHaveTextContent("40.0");
 
-    // Marcar a José López como Parcial (4h) y a Luis Morales como Ausente (Permiso) con 1 toque
+    // Marcar José López Parcial (4h), Luis Morales Ausente (Permiso) y +1h extra a Carlos Méndez
+    // Total esperado: (8+1) + 4 + 0 + 8 + 8 = 29.0 HH
     const workerCards = screen.getAllByRole("article");
     await user.click(within(workerCards[1]).getByRole("button", { name: /Parcial/i }));
     await user.click(within(workerCards[2]).getByRole("button", { name: /Ausente/i }));
     await user.click(within(workerCards[2]).getByRole("button", { name: "Permiso" }));
-
-    // Agregar +1h extra a Carlos Méndez (8 + 1 = 9 HH; José 4 HH; Luis 0 HH => Total 13.0 HH)
     await user.click(within(workerCards[0]).getByRole("button", { name: /\+ Agregar extra/i }));
-    expect(kpiStrip).toHaveTextContent("13.0");
 
-    // Paso 1 -> Paso 2 (Foto grupal guiada)
-    await user.click(screen.getByRole("button", { name: /Siguiente: Tomar Foto \(2 presentes\)/i }));
-    expect(screen.getByText(/Reúna a los 2 trabajadores presentes/i)).toBeInTheDocument();
+    expect(kpiStrip).toHaveTextContent("29.0");
 
-    // Verificar input de cámara trasera para Samsung (capture="environment")
+    // Paso 1 -> Paso 2 (Foto grupal del proyecto)
+    await user.click(screen.getByRole("button", { name: /Siguiente: Foto Grupal \(4 presentes\)/i }));
+    expect(screen.getByText(/Reúna a los 4 trabajadores presentes/i)).toBeInTheDocument();
+
     const photoInput = document.getElementById("input-crew-photo") as HTMLInputElement;
     expect(photoInput).toHaveAttribute("accept", "image/*");
     expect(photoInput).toHaveAttribute("capture", "environment");
 
-    const fakePhoto = new File(["fake-image-bytes"], "cuadrilla.jpg", { type: "image/jpeg" });
+    const fakePhoto = new File(["fake-image-bytes"], "obra.jpg", { type: "image/jpeg" });
     await user.upload(photoInput, fakePhoto);
 
     await screen.findByText(/Foto lista con sello corporativo CFA/i);
 
-    // Paso 2 -> Paso 3 (Resumen corporativo)
+    // Paso 2 -> Paso 3 (Resumen global)
     await user.click(screen.getByRole("button", { name: /Foto correcta: Confirmar/i }));
-    expect(screen.getByText(/Resumen antes de guardar/i)).toBeInTheDocument();
-    expect(screen.getByText("13.0 HH")).toBeInTheDocument();
+    expect(screen.getByText(/Resumen global del proyecto/i)).toBeInTheDocument();
+    expect(screen.getByText("29.0 HH")).toBeInTheDocument();
 
-    // Guardar asistencia
-    await user.click(screen.getByRole("button", { name: /Confirmar y Guardar \(13\.0 HH\)/i }));
+    // Guardar asistencia global
+    await user.click(screen.getByRole("button", { name: /Confirmar y Guardar \(29\.0 HH\)/i }));
 
     await waitFor(() => {
       expect(api.saveAttendance).toHaveBeenCalledTimes(1);
     });
     const [, savedPayload, savedPhoto] = vi.mocked(api.saveAttendance).mock.calls[0];
-    expect(savedPayload.crew_id).toBe(10);
+    expect(savedPayload.entries).toHaveLength(5);
     expect(savedPayload.entries[0].extra_hours).toBe(1);
     expect(savedPayload.entries[1].status).toBe("parcial");
     expect(savedPayload.entries[2].reason).toBe("Permiso");
     expect(savedPhoto).toBeInstanceOf(Blob);
 
-    // Pantalla de éxito ofrece saltar directo a la siguiente cuadrilla pendiente
-    await screen.findByText(/Asistencia registrada correctamente/i);
-    expect(screen.getByRole("button", { name: /Pasar asistencia a: Cuadrilla Repello B/i })).toBeInTheDocument();
+    await screen.findByText(/Asistencia global registrada correctamente/i);
   });
 
   it("guarda en cola offline si falla la red en obra", async () => {
@@ -186,11 +186,11 @@ describe("AttendanceView — Flujo guiado para Maestro de Obra (Samsung / Sol Di
     render(<AttendanceView project={mockProject} onQueueChanged={onQueueChanged} />);
     await screen.findByText("Carlos Méndez");
 
-    await user.click(screen.getByRole("button", { name: /Siguiente: Tomar Foto/i }));
+    await user.click(screen.getByRole("button", { name: /Siguiente: Foto Grupal/i }));
     await user.click(screen.getByRole("button", { name: /Continuar sin foto por ahora/i }));
     await user.click(screen.getByRole("button", { name: /Confirmar y Guardar/i }));
 
-    await screen.findByText(/Asistencia guardada en el teléfono \(Sin señal\)/i);
+    await screen.findByText(/Asistencia global guardada en el teléfono \(Sin señal\)/i);
     expect(addOfflineSpy).toHaveBeenCalledTimes(1);
     expect(onQueueChanged).toHaveBeenCalledTimes(1);
   });

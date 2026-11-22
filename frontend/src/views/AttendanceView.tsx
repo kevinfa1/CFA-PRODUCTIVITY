@@ -1,7 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import { offlineDb } from "../db";
-import { WORKER_ROLES, type AttendanceEntryPayload, type AttendanceLog, type Crew, type Project, type WorkerRole } from "../types";
+import {
+  WORKER_ROLES,
+  type AttendanceEntryPayload,
+  type AttendanceLog,
+  type Crew,
+  type Project,
+  type WorkerRole,
+} from "../types";
 import {
   ABSENCE_REASONS,
   PARTIAL_HOURS_OPTIONS,
@@ -76,27 +83,64 @@ function IconPin() {
   );
 }
 
-function buildDefaultEntries(crew: Crew, existingLog?: AttendanceLog): AttendanceEntryPayload[] {
-  if (existingLog && existingLog.entries.length > 0) {
-    return existingLog.entries.map((e) => ({
-      worker_id: e.worker_id,
-      worker_name: e.worker_name,
-      role: normalizeWorkerRole(e.role),
-      status: e.status,
-      normal_hours: e.normal_hours,
-      extra_hours: e.extra_hours,
-      reason: e.reason || "",
-    }));
+function buildGlobalProjectEntries(
+  crews: Crew[],
+  existingLog?: AttendanceLog
+): AttendanceEntryPayload[] {
+  const existingByName = new Map<string, AttendanceEntryPayload>();
+  if (existingLog) {
+    for (const e of existingLog.entries) {
+      existingByName.set(e.worker_name.trim().toLowerCase(), {
+        ...e,
+        role: normalizeWorkerRole(e.role),
+        reason: e.reason || "",
+      });
+    }
   }
-  return crew.workers.map((w) => ({
-    worker_id: w.id,
-    worker_name: w.name,
-    role: normalizeWorkerRole(w.role),
-    status: "presente",
-    normal_hours: 8,
-    extra_hours: 0,
-    reason: "",
-  }));
+
+  const seen = new Set<string>();
+  const result: AttendanceEntryPayload[] = [];
+
+  for (const crew of crews) {
+    for (const w of crew.workers) {
+      if (!w.active) continue;
+      const key = w.name.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+
+      const saved = existingByName.get(key);
+      if (saved) {
+        result.push({ ...saved, worker_id: w.id, role: normalizeWorkerRole(w.role) });
+      } else {
+        result.push({
+          worker_id: w.id,
+          worker_name: w.name,
+          role: normalizeWorkerRole(w.role),
+          status: "presente",
+          normal_hours: 8,
+          extra_hours: 0,
+          reason: "",
+        });
+      }
+    }
+  }
+
+  // Conservar trabajadores eventuales que estuvieran en el registro previo aunque no estén en catálogo
+  if (existingLog) {
+    for (const e of existingLog.entries) {
+      const key = e.worker_name.trim().toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        result.push({
+          ...e,
+          role: normalizeWorkerRole(e.role),
+          reason: e.reason || "",
+        });
+      }
+    }
+  }
+
+  return result;
 }
 
 export function AttendanceView({
@@ -107,7 +151,6 @@ export function AttendanceView({
   onQueueChanged: () => void;
 }) {
   const [crews, setCrews] = useState<Crew[]>([]);
-  const [selectedCrewId, setSelectedCrewId] = useState<number | null>(null);
   const [workDate, setWorkDate] = useState(() => new Date().toISOString().slice(0, 10));
   const [entries, setEntries] = useState<AttendanceEntryPayload[]>([]);
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
@@ -128,7 +171,7 @@ export function AttendanceView({
   const [addingWorker, setAddingWorker] = useState(false);
 
   const [saving, setSaving] = useState(false);
-  const [savedBanner, setSavedBanner] = useState<{ offline: boolean; crewName: string; totalHH: number } | null>(null);
+  const [savedBanner, setSavedBanner] = useState<{ offline: boolean; totalHH: number } | null>(null);
   const [showHistory, setShowHistory] = useState(false);
   const [toast, setToast] = useState("");
   const toastTimerRef = useRef<number | null>(null);
@@ -148,22 +191,9 @@ export function AttendanceView({
     };
   }, [groupPhotoUrl]);
 
-  const selectedCrew = useMemo(
-    () => crews.find((c) => c.id === selectedCrewId) ?? null,
-    [crews, selectedCrewId]
-  );
-
+  // ID técnico principal del proyecto para compatibilidad con el endpoint de almacenamiento
+  const primaryCrewId = crews[0]?.id ?? 1;
   const summary = useMemo(() => summarizeAttendance(entries), [entries]);
-
-  const todayLogsByCrew = useMemo(() => {
-    const map = new Map<number, AttendanceLog>();
-    for (const l of logs) {
-      if (l.work_date === workDate && !map.has(l.crew_id)) {
-        map.set(l.crew_id, l);
-      }
-    }
-    return map;
-  }, [logs, workDate]);
 
   const validateGps = (silent = false) => {
     if (typeof navigator === "undefined" || !navigator.geolocation) {
@@ -197,7 +227,7 @@ export function AttendanceView({
     );
   };
 
-  const loadCrewsAndLogs = async (keepSelection = false) => {
+  const loadGlobalProjectAttendance = async (targetDate = workDate, preserveDraft = false) => {
     const [crewList, attLogs] = await Promise.all([
       api.getCrews(project.id),
       api.listAttendance(project.id),
@@ -205,56 +235,33 @@ export function AttendanceView({
     setCrews(crewList);
     setLogs(attLogs);
 
-    if (crewList.length > 0 && (!keepSelection || selectedCrewId === null)) {
-      const targetCrew = crewList.find((c) => c.id === selectedCrewId) ?? crewList[0];
-      setSelectedCrewId(targetCrew.id);
-      const todayExisting = attLogs.find((l) => l.crew_id === targetCrew.id && l.work_date === workDate);
-      setEntries(buildDefaultEntries(targetCrew, todayExisting));
-      if (todayExisting?.group_photo_path) {
-        setGroupPhotoUrl(todayExisting.group_photo_path);
-      }
+    if (!preserveDraft) {
+      const todayExisting = attLogs.find((l) => l.work_date === targetDate);
+      setEntries(buildGlobalProjectEntries(crewList, todayExisting));
+      setGroupPhotoUrl(todayExisting?.group_photo_path ?? null);
     }
   };
 
   useEffect(() => {
-    void loadCrewsAndLogs(false);
+    void loadGlobalProjectAttendance(workDate, false);
     validateGps(true);
   }, [project.id]);
-
-  const selectCrew = (crewId: number) => {
-    triggerHaptic(18);
-    setSelectedCrewId(crewId);
-    setSavedBanner(null);
-    setStep(1);
-    setGroupPhotoBlob(undefined);
-    const crew = crews.find((c) => c.id === crewId);
-    if (!crew) return;
-    const todayExisting = logs.find((l) => l.crew_id === crewId && l.work_date === workDate);
-    setEntries(buildDefaultEntries(crew, todayExisting));
-    setGroupPhotoUrl(todayExisting?.group_photo_path ?? null);
-  };
 
   const handleDateChange = (newDate: string) => {
     setWorkDate(newDate);
     setSavedBanner(null);
-    if (!selectedCrew) return;
-    const existing = logs.find((l) => l.crew_id === selectedCrew.id && l.work_date === newDate);
-    setEntries(buildDefaultEntries(selectedCrew, existing));
+    setStep(1);
+    const existing = logs.find((l) => l.work_date === newDate);
+    setEntries(buildGlobalProjectEntries(crews, existing));
     setGroupPhotoBlob(undefined);
     setGroupPhotoUrl(existing?.group_photo_path ?? null);
   };
 
   const handleSameAsYesterday = () => {
     triggerHaptic(22);
-    const prevLog = logs.find((l) => l.crew_id === selectedCrewId && l.work_date !== workDate)
-      ?? logs.find((l) => l.crew_id === selectedCrewId);
+    const prevLog = logs.find((l) => l.work_date !== workDate) ?? logs[0];
     if (prevLog && prevLog.entries.length > 0) {
-      setEntries(
-        prevLog.entries.map((e) => ({
-          ...e,
-          role: normalizeWorkerRole(e.role),
-        }))
-      );
+      setEntries(buildGlobalProjectEntries(crews, prevLog));
       notify(`Lista copiada del ${prevLog.work_date}`);
     } else {
       handleMarkAllPresent();
@@ -272,7 +279,7 @@ export function AttendanceView({
         reason: "",
       }))
     );
-    notify("Todos marcados Presente (8.0 HH)");
+    notify("Todo el personal marcado Presente (8.0 HH)");
   };
 
   const updateWorkerStatus = (idx: number, status: "presente" | "parcial" | "ausente") => {
@@ -314,11 +321,11 @@ export function AttendanceView({
 
   const handleAddWorker = async () => {
     const trimmed = newWorkerName.trim();
-    if (!trimmed || selectedCrewId === null || addingWorker) return;
+    if (!trimmed || addingWorker) return;
     setAddingWorker(true);
     triggerHaptic(20);
     try {
-      const created = (await api.addWorker(selectedCrewId, trimmed, newWorkerRole)) as {
+      const created = (await api.addWorker(primaryCrewId, trimmed, newWorkerRole)) as {
         id?: number;
         name: string;
         role: WorkerRole;
@@ -337,10 +344,9 @@ export function AttendanceView({
       ]);
       setNewWorkerName("");
       setShowAddWorker(false);
-      notify(`Agregado: ${trimmed} (${newWorkerRole})`);
-      await loadCrewsAndLogs(true);
+      notify(`Agregado al proyecto: ${trimmed} (${newWorkerRole})`);
+      await loadGlobalProjectAttendance(workDate, true);
     } catch {
-      // Fallback local si está sin señal en obra
       setEntries((prev) => [
         ...prev,
         {
@@ -375,7 +381,6 @@ export function AttendanceView({
     try {
       const stamped = await stampCrewPhoto(file, {
         projectName: project.name,
-        crewName: selectedCrew?.name ?? "Cuadrilla",
         workDate,
         presentCount: summary.presentCount,
         totalWorkers: summary.totalWorkers,
@@ -385,19 +390,19 @@ export function AttendanceView({
       });
       setGroupPhotoBlob(stamped);
       setGroupPhotoUrl(URL.createObjectURL(stamped));
-      notify("Foto sellada con fecha, cuadrilla y conteo");
+      notify("Foto global sellada con fecha, proyecto y conteo");
     } finally {
       setStampingPhoto(false);
     }
   };
 
   const handleSave = async () => {
-    if (selectedCrewId === null || saving) return;
+    if (saving) return;
     setSaving(true);
     triggerHaptic(35);
 
     const payload = {
-      crew_id: selectedCrewId,
+      crew_id: primaryCrewId,
       work_date: workDate,
       inside_geofence: insideGeo,
       distance_m: distanceM,
@@ -409,17 +414,13 @@ export function AttendanceView({
 
     try {
       await api.saveAttendance(project.id, payload, groupPhotoBlob);
-      setSavedBanner({
-        offline: false,
-        crewName: selectedCrew?.name ?? "Cuadrilla",
-        totalHH: summary.totalHH,
-      });
+      setSavedBanner({ offline: false, totalHH: summary.totalHH });
       setGroupPhotoBlob(undefined);
-      await loadCrewsAndLogs(true);
+      await loadGlobalProjectAttendance(workDate, true);
     } catch {
       await offlineDb.pendingAttendance.add({
         projectId: project.id,
-        crewId: selectedCrewId,
+        crewId: primaryCrewId,
         workDate,
         insideGeofence: insideGeo,
         distanceM,
@@ -428,30 +429,26 @@ export function AttendanceView({
         createdAt: new Date().toISOString(),
       });
       onQueueChanged();
-      setSavedBanner({
-        offline: true,
-        crewName: selectedCrew?.name ?? "Cuadrilla",
-        totalHH: summary.totalHH,
-      });
+      setSavedBanner({ offline: true, totalHH: summary.totalHH });
     } finally {
       setSaving(false);
     }
   };
 
-  const nextPendingCrew = crews.find((c) => c.id !== selectedCrewId && !todayLogsByCrew.has(c.id)) ?? null;
+  const todayDone = logs.some((l) => l.work_date === workDate);
 
   return (
     <section
       id="attendance-module"
       className={`att-shell ${sunBoost ? "sun-boost" : ""}`}
-      aria-label="Control de Asistencia en Obra"
+      aria-label="Asistencia Global del Proyecto"
     >
       {/* Encabezado Corporativo de Alto Contraste */}
       <div className="att-hero">
         <div className="att-hero-top">
           <div>
-            <div className="att-hero-eyebrow">CFA · CONTROL DE ASISTENCIA</div>
-            <h1 className="att-hero-title">Pase de Lista en Obra</h1>
+            <div className="att-hero-eyebrow">CFA · ASISTENCIA GLOBAL DE OBRA</div>
+            <h1 className="att-hero-title">{project.name}</h1>
           </div>
           <button
             id="btn-sun-boost"
@@ -490,6 +487,10 @@ export function AttendanceView({
             <IconPin />
             {gpsLoading ? "Ubicando GPS..." : gpsLabel}
           </button>
+
+          {todayDone && (
+            <span className="att-status-tag done">✓ Lista de hoy registrada</span>
+          )}
         </div>
       </div>
 
@@ -499,7 +500,7 @@ export function AttendanceView({
         </div>
       )}
 
-      {/* Indicador Guiado de 3 Pasos */}
+      {/* Indicador Guiado Directo de 3 Pasos (Sin selección de cuadrilla) */}
       {!savedBanner && (
         <nav className="att-stepper" aria-label="Pasos de asistencia">
           <button
@@ -509,7 +510,7 @@ export function AttendanceView({
             onClick={() => setStep(1)}
           >
             <span className="att-step-num">{step > 1 ? "✓" : "1"}</span>
-            <span>Lista</span>
+            <span>Personal ({summary.totalWorkers})</span>
           </button>
           <button
             id="step-btn-2"
@@ -527,7 +528,7 @@ export function AttendanceView({
             onClick={() => setStep(3)}
           >
             <span className="att-step-num">3</span>
-            <span>Confirmar</span>
+            <span>Guardar</span>
           </button>
         </nav>
       )}
@@ -537,11 +538,11 @@ export function AttendanceView({
         <div className="att-success-card" role="status">
           <div className="att-success-title">
             {savedBanner.offline
-              ? "Asistencia guardada en el teléfono (Sin señal)"
-              : "Asistencia registrada correctamente"}
+              ? "Asistencia global guardada en el teléfono (Sin señal)"
+              : "Asistencia global registrada correctamente"}
           </div>
           <p style={{ fontSize: 15, fontWeight: 600 }}>
-            {savedBanner.crewName} · {summary.presentCount}/{summary.totalWorkers} presentes (
+            {project.name} · {summary.presentCount}/{summary.totalWorkers} presentes (
             {summary.albanilesPresent} Albañiles · {summary.ayudantesPresent} Ayudantes) ·{" "}
             <strong>{savedBanner.totalHH.toFixed(1)} HH</strong>
           </p>
@@ -551,52 +552,42 @@ export function AttendanceView({
             </p>
           )}
 
-          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-            {nextPendingCrew && (
-              <button
-                id="btn-next-crew"
-                type="button"
-                className="att-btn-primary"
-                onClick={() => selectCrew(nextPendingCrew.id)}
-              >
-                Pasar asistencia a: {nextPendingCrew.name} →
-              </button>
-            )}
-            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-              <button
-                type="button"
-                className="att-btn-secondary"
-                style={{ flex: 1 }}
-                onClick={() => {
-                  setSavedBanner(null);
-                  setStep(1);
-                }}
-              >
-                Editar lista
-              </button>
-              <a
-                className="att-btn-secondary"
-                style={{ flex: 1 }}
-                href={`/api/projects/${project.id}/attendance/export.csv`}
-                download
-              >
-                Descargar CSV
-              </a>
-            </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="att-btn-secondary"
+              style={{ flex: 1 }}
+              onClick={() => {
+                setSavedBanner(null);
+                setStep(1);
+              }}
+            >
+              Editar lista global
+            </button>
+            <a
+              className="att-btn-secondary"
+              style={{ flex: 1 }}
+              href={`/api/projects/${project.id}/attendance/export.csv`}
+              download
+            >
+              Descargar CSV
+            </a>
           </div>
         </div>
       )}
 
       {/* =================================================================
-          PASO 1: SELECCIONAR CUADRILLA Y MARCAR EXCEPCIONES (1 TOQUE)
+          PASO 1: LISTA GLOBAL DEL PROYECTO (1 TOQUE)
          ================================================================= */}
       {!savedBanner && step === 1 && (
         <>
           <div className="att-card">
             <div className="att-section-head">
               <div>
-                <div className="att-section-title">1. Seleccione la cuadrilla</div>
-                <div className="att-section-sub">Toque la cuadrilla para pasar lista</div>
+                <div className="att-section-title">Lista global de la obra</div>
+                <div className="att-section-sub">
+                  Todos inician como Presente (8h). Marque solo faltas o medios días.
+                </div>
               </div>
               <a
                 className="att-action-chip"
@@ -607,43 +598,8 @@ export function AttendanceView({
               </a>
             </div>
 
-            <div className="att-crew-grid">
-              {crews.map((crew) => {
-                const isSelected = crew.id === selectedCrewId;
-                const isDoneToday = todayLogsByCrew.has(crew.id);
-                return (
-                  <button
-                    key={crew.id}
-                    type="button"
-                    className={`att-crew-chip ${isSelected ? "selected" : ""}`}
-                    aria-pressed={isSelected}
-                    onClick={() => selectCrew(crew.id)}
-                  >
-                    <span className="att-crew-name">{crew.name}</span>
-                    <span className="att-crew-meta">
-                      <span>{crew.workers.length} pers.</span>
-                      <span className={`att-status-tag ${isDoneToday ? "done" : "pending"}`}>
-                        {isDoneToday ? "✓ Listo" : "Pendiente"}
-                      </span>
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          <div className="att-card">
-            <div className="att-section-head">
-              <div>
-                <div className="att-section-title">2. Marque solo faltas o medios días</div>
-                <div className="att-section-sub">
-                  Todos inician como Presente (8h) para ahorrar tiempo
-                </div>
-              </div>
-            </div>
-
             {/* Resumen en vivo de Albañiles, Ayudantes y HH */}
-            <div className="att-kpi-strip" aria-label="Resumen de cuadrilla">
+            <div className="att-kpi-strip" aria-label="Resumen global del proyecto">
               <div className="att-kpi-box">
                 <div className="att-kpi-num">
                   {summary.albanilesPresent}/{summary.albanilesTotal}
@@ -692,7 +648,7 @@ export function AttendanceView({
             {/* Formulario compacto para agregar Albañil o Ayudante */}
             {showAddWorker && (
               <div className="att-add-box" aria-label="Agregar nuevo trabajador">
-                <div className="att-section-title">Agregar trabajador a {selectedCrew?.name}</div>
+                <div className="att-section-title">Agregar trabajador a la obra</div>
                 <input
                   id="input-new-worker-name"
                   className="att-text-input"
@@ -727,7 +683,7 @@ export function AttendanceView({
               </div>
             )}
 
-            {/* Lista de trabajadores con botones grandes */}
+            {/* Lista global de trabajadores */}
             <div className="att-worker-list">
               {entries.map((entry, idx) => {
                 const role = normalizeWorkerRole(entry.role);
@@ -841,19 +797,19 @@ export function AttendanceView({
                 setStep(2);
               }}
             >
-              Siguiente: Tomar Foto ({summary.presentCount} presentes) →
+              Siguiente: Foto Grupal ({summary.presentCount} presentes) →
             </button>
           </div>
         </>
       )}
 
       {/* =================================================================
-          PASO 2: FOTO GRUPAL GUIADA CON SELLO AUTOMÁTICO
+          PASO 2: FOTO GRUPAL GLOBAL CON SELLO AUTOMÁTICO
          ================================================================= */}
       {!savedBanner && step === 2 && (
         <>
           <div className="att-card">
-            <div className="att-section-title">Foto grupal de respaldo ({selectedCrew?.name})</div>
+            <div className="att-section-title">Foto grupal del proyecto</div>
 
             <div className="att-photo-guide">
               <div className="att-guide-count">
@@ -864,8 +820,8 @@ export function AttendanceView({
               </div>
               <ul className="att-guide-list">
                 <li>1. Colóquese con el sol detrás de usted (evite contraluz).</li>
-                <li>2. Verifique que todos salgan visibles en el encuadre.</li>
-                <li>3. La app estampará fecha, hora, cuadrilla y GPS automáticamente.</li>
+                <li>2. Verifique que todo el personal presente salga en el encuadre.</li>
+                <li>3. La app estampará proyecto, fecha, hora y GPS automáticamente.</li>
               </ul>
             </div>
 
@@ -875,8 +831,8 @@ export function AttendanceView({
                 {stampingPhoto
                   ? "Procesando y sellando foto..."
                   : groupPhotoUrl
-                    ? "REPETIR FOTO DE CUADRILLA"
-                    : "TOMAR FOTO DE CUADRILLA"}
+                    ? "REPETIR FOTO DE OBRA"
+                    : "TOMAR FOTO DEL PERSONAL"}
               </span>
               <input
                 id="input-crew-photo"
@@ -899,7 +855,7 @@ export function AttendanceView({
                 </div>
                 <img
                   src={groupPhotoUrl}
-                  alt="Vista previa de foto grupal de cuadrilla"
+                  alt="Vista previa de foto grupal del proyecto"
                   className="att-photo-preview"
                 />
               </div>
@@ -941,16 +897,16 @@ export function AttendanceView({
       )}
 
       {/* =================================================================
-          PASO 3: RESUMEN CORPORATIVO Y GUARDAR EN 1 TOQUE
+          PASO 3: RESUMEN GLOBAL Y GUARDAR EN 1 TOQUE
          ================================================================= */}
       {!savedBanner && step === 3 && (
         <>
           <div className="att-card">
             <div className="att-section-head">
               <div>
-                <div className="att-section-title">Resumen antes de guardar</div>
+                <div className="att-section-title">Resumen global del proyecto</div>
                 <div className="att-section-sub">
-                  {selectedCrew?.name} · {formatSpanishDate(workDate)}
+                  {project.name} · {formatSpanishDate(workDate)}
                 </div>
               </div>
             </div>
@@ -1044,10 +1000,10 @@ export function AttendanceView({
         </>
       )}
 
-      {/* Historial reciente de asistencias */}
+      {/* Historial reciente del proyecto */}
       <div className="att-card">
         <div className="att-section-head">
-          <div className="att-section-title">Historial de Asistencias ({logs.length})</div>
+          <div className="att-section-title">Historial del Proyecto ({logs.length})</div>
           <button
             id="btn-toggle-history"
             type="button"
@@ -1063,25 +1019,22 @@ export function AttendanceView({
             {logs.length === 0 ? (
               <div className="att-section-sub">Aún no hay asistencias registradas.</div>
             ) : (
-              logs.slice(0, 8).map((log) => {
-                const crewName = crews.find((c) => c.id === log.crew_id)?.name ?? `Cuadrilla #${log.crew_id}`;
-                return (
-                  <div key={log.id} className="att-history-item">
-                    <div>
-                      <div style={{ fontWeight: 700, fontSize: 15 }}>{crewName}</div>
-                      <div className="att-section-sub">
-                        {log.work_date} · {log.present_count}/{log.total_workers} presentes ·{" "}
-                        <strong>{log.total_hh.toFixed(1)} HH</strong>
-                      </div>
+              logs.slice(0, 8).map((log) => (
+                <div key={log.id} className="att-history-item">
+                  <div>
+                    <div style={{ fontWeight: 700, fontSize: 15 }}>{log.work_date}</div>
+                    <div className="att-section-sub">
+                      {log.present_count}/{log.total_workers} presentes ·{" "}
+                      <strong>{log.total_hh.toFixed(1)} HH</strong>
                     </div>
-                    {log.group_photo_path ? (
-                      <span className="att-status-tag done">✓ Con foto</span>
-                    ) : (
-                      <span className="att-status-tag pending">Sin foto</span>
-                    )}
                   </div>
-                );
-              })
+                  {log.group_photo_path ? (
+                    <span className="att-status-tag done">✓ Con foto</span>
+                  ) : (
+                    <span className="att-status-tag pending">Sin foto</span>
+                  )}
+                </div>
+              ))
             )}
           </div>
         )}

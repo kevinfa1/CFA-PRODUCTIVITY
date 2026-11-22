@@ -125,9 +125,7 @@ export const demoFallback = {
     },
     groupPhotoBlob?: Blob
   ): Promise<AttendanceLog> => {
-    const logs = loadLogs().filter(
-      (l) => !(l.crew_id === payload.crew_id && l.work_date === payload.work_date)
-    );
+    const logs = loadLogs().filter((l) => l.work_date !== payload.work_date);
     const presentCount = payload.entries.filter((e) => e.status !== "ausente").length;
     const totalHH = payload.entries.reduce(
       (sum, e) => sum + (e.status === "ausente" ? 0 : e.normal_hours + e.extra_hours),
