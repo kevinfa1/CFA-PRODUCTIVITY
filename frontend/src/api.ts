@@ -3,6 +3,7 @@ import { demoFallback, isStaticPagesHost } from "./demoFallback";
 import type {
   AttendanceEntryPayload,
   AttendanceLog,
+  AuthSession,
   Crew,
   DailyCapture,
   DashboardData,
@@ -18,12 +19,27 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   const res = await fetch(`${API_BASE}${url}`, init);
   if (!res.ok) {
     const text = await res.text();
-    throw new Error(text || `Error HTTP ${res.status}`);
+    let detail = text;
+    try {
+      const parsed = JSON.parse(text) as { detail?: string };
+      if (parsed.detail) detail = parsed.detail;
+    } catch {
+      // ignore non-json error
+    }
+    throw new Error(detail || `Error HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
 }
 
 export const api = {
+  login: (username: string, password: string): Promise<AuthSession> =>
+    isStaticPagesHost()
+      ? demoFallback.login(username, password)
+      : jsonFetch<AuthSession>("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ username, password }),
+        }),
   seedPilot: () => (isStaticPagesHost() ? demoFallback.seedPilot() : jsonFetch<Project>("/api/projects/seed-pilot", { method: "POST" })),
   listProjects: () => (isStaticPagesHost() ? demoFallback.listProjects() : jsonFetch<Project[]>("/api/projects")),
   updateProject: (id: number, body: Partial<Project>) =>

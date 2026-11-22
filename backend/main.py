@@ -3,7 +3,10 @@
 from __future__ import annotations
 
 import csv
+import hashlib
+import hmac
 import io
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timezone
@@ -35,6 +38,8 @@ from backend.schemas import (
     CrewCreate,
     CrewOut,
     DailyCaptureOut,
+    LoginRequest,
+    LoginResponse,
     NoProgressCreate,
     ProjectCreate,
     ProjectOut,
@@ -114,6 +119,48 @@ def _recompute_element_status(element: WallElement) -> None:
 @app.get("/api/health")
 def health_check() -> dict:
     return {"status": "ok", "service": "cfa-productivity-api"}
+
+
+def _get_configured_users() -> dict[str, dict]:
+    maestro_user = os.getenv("CFA_MAESTRO_USER", "maestro")
+    maestro_pass = os.getenv("CFA_MAESTRO_PASSWORD", "cfa2026")
+    admin_user = os.getenv("CFA_ADMIN_USER", "admin")
+    admin_pass = os.getenv("CFA_ADMIN_PASSWORD", "cfa_admin_2026")
+    return {
+        maestro_user.lower(): {
+            "username": maestro_user,
+            "password": maestro_pass,
+            "display_name": "Maestro de Obra",
+            "role": "maestro",
+            "allowed_tabs": ["attendance"],
+        },
+        admin_user.lower(): {
+            "username": admin_user,
+            "password": admin_pass,
+            "display_name": "Residente / Oficina",
+            "role": "admin",
+            "allowed_tabs": ["attendance"],
+        },
+    }
+
+
+@app.post("/api/auth/login", response_model=LoginResponse)
+def login_user(payload: LoginRequest):
+    users = _get_configured_users()
+    key = payload.username.strip().lower()
+    user = users.get(key)
+    if not user or not hmac.compare_digest(payload.password, user["password"]):
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+
+    secret = os.getenv("CFA_AUTH_SECRET", "cfa-field-auth-secret-v1").encode("utf-8")
+    sig = hmac.new(secret, f"{user['username']}:{user['role']}".encode("utf-8"), hashlib.sha256).hexdigest()
+    return LoginResponse(
+        token=f"{user['username']}.{sig[:24]}",
+        username=user["username"],
+        display_name=user["display_name"],
+        role=user["role"],
+        allowed_tabs=user["allowed_tabs"],
+    )
 
 
 @app.get("/api/projects", response_model=List[ProjectOut])

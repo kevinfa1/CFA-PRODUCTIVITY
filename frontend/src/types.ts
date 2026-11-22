@@ -174,3 +174,11 @@ export interface AttendanceLog {
   group_photo_path: string | null;
   entries: AttendanceEntryPayload[];
 }
+
+export interface AuthSession {
+  token: string;
+  username: string;
+  display_name: string;
+  role: string;
+  allowed_tabs: string[];
+}

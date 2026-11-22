@@ -1,6 +1,7 @@
 import type {
   AttendanceEntryPayload,
   AttendanceLog,
+  AuthSession,
   Crew,
   DailyCapture,
   DashboardData,
@@ -105,6 +106,28 @@ export const isStaticPagesHost = (): boolean =>
   typeof window !== "undefined" && window.location.hostname.endsWith("github.io");
 
 export const demoFallback = {
+  login: async (username: string, password: string): Promise<AuthSession> => {
+    const cleanUser = username.trim().toLowerCase();
+    if (cleanUser === "maestro" && password === "cfa2026") {
+      return {
+        token: "demo-maestro-token",
+        username: "maestro",
+        display_name: "Maestro de Obra",
+        role: "maestro",
+        allowed_tabs: ["attendance"],
+      };
+    }
+    if (cleanUser === "admin" && password === "cfa_admin_2026") {
+      return {
+        token: "demo-admin-token",
+        username: "admin",
+        display_name: "Residente / Oficina",
+        role: "admin",
+        allowed_tabs: ["attendance"],
+      };
+    }
+    throw new Error("Usuario o contraseña incorrectos");
+  },
   listProjects: async (): Promise<Project[]> => [project],
   seedPilot: async (): Promise<Project> => project,
   getCrews: async (): Promise<Crew[]> => crews,

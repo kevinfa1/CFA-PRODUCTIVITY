@@ -255,3 +255,17 @@ class DailyCaptureOut(BaseModel):
     approved_at: Optional[datetime]
     created_at: datetime
     element: Optional[WallElementOut] = None
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class LoginResponse(BaseModel):
+    token: str
+    username: str
+    display_name: str
+    role: str
+    allowed_tabs: List[str]
+
