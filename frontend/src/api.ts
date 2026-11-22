@@ -17,6 +17,40 @@ import { blobToBase64 } from "./utils/attendanceUtils";
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 const APPS_SCRIPT_STORAGE_KEY = "cfa_apps_script_url_v1";
 
+type BackendMode = "fastapi" | "php" | "static";
+let detectedModePromise: Promise<BackendMode> | null = null;
+
+export async function detectBackendMode(): Promise<BackendMode> {
+  if (isStaticPagesHost()) return "static";
+  if (detectedModePromise) return detectedModePromise;
+
+  detectedModePromise = (async () => {
+    try {
+      const phpRes = await fetch("./api.php?action=health", { cache: "no-store" });
+      if (phpRes.ok) {
+        const data = (await phpRes.json()) as { ok?: boolean; mode?: string };
+        if (data?.ok && data?.mode === "php") return "php";
+      }
+    } catch {
+      // No PHP endpoint
+    }
+
+    try {
+      const apiRes = await fetch(`${API_BASE}/api/health`, { cache: "no-store" });
+      if (apiRes.ok) {
+        const data = (await apiRes.json()) as { status?: string };
+        if (data?.status === "ok") return "fastapi";
+      }
+    } catch {
+      // No FastAPI endpoint
+    }
+
+    return "static";
+  })();
+
+  return detectedModePromise;
+}
+
 export function getAppsScriptUrl(): string {
   const envUrl = (import.meta.env.VITE_APPS_SCRIPT_URL as string | undefined) || "";
   if (envUrl.trim()) return envUrl.trim();
@@ -43,8 +77,9 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
     const text = await res.text();
     let detail = text;
     try {
-      const parsed = JSON.parse(text) as { detail?: string };
+      const parsed = JSON.parse(text) as { detail?: string; error?: string };
       if (parsed.detail) detail = parsed.detail;
+      else if (parsed.error) detail = parsed.error;
     } catch {
       // ignore non-json error
     }
@@ -53,17 +88,47 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
+async function phpFetch<T>(action: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`./api.php?action=${encodeURIComponent(action)}`, init);
+  const data = (await res.json()) as T & { ok?: boolean; error?: string };
+  if (!res.ok || (data && typeof data === "object" && "ok" in data && data.ok === false)) {
+    throw new Error((data as { error?: string }).error || `Error HTTP ${res.status}`);
+  }
+  return data;
+}
+
 export const api = {
-  login: (username: string, password: string): Promise<AuthSession> =>
-    isStaticPagesHost()
-      ? demoFallback.login(username, password)
-      : jsonFetch<AuthSession>("/api/auth/login", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ username, password }),
-        }),
-  seedPilot: () => (isStaticPagesHost() ? demoFallback.seedPilot() : jsonFetch<Project>("/api/projects/seed-pilot", { method: "POST" })),
-  listProjects: () => (isStaticPagesHost() ? demoFallback.listProjects() : jsonFetch<Project[]>("/api/projects")),
+  login: async (username: string, password: string): Promise<AuthSession> => {
+    const mode = await detectBackendMode();
+    if (mode === "static") return demoFallback.login(username, password);
+    if (mode === "php") {
+      return phpFetch<AuthSession>("login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ username, password }),
+      });
+    }
+    return jsonFetch<AuthSession>("/api/auth/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ username, password }),
+    });
+  },
+  seedPilot: async (): Promise<Project> => {
+    const mode = await detectBackendMode();
+    if (mode === "static") return demoFallback.seedPilot();
+    if (mode === "php") {
+      const list = await phpFetch<Project[]>("projects");
+      return list[0];
+    }
+    return jsonFetch<Project>("/api/projects/seed-pilot", { method: "POST" });
+  },
+  listProjects: async (): Promise<Project[]> => {
+    const mode = await detectBackendMode();
+    if (mode === "static") return demoFallback.listProjects();
+    if (mode === "php") return phpFetch<Project[]>("projects");
+    return jsonFetch<Project[]>("/api/projects");
+  },
   updateProject: (id: number, body: Partial<Project>) =>
     jsonFetch<Project>(`/api/projects/${id}`, {
       method: "PATCH",
@@ -87,16 +152,28 @@ export const api = {
           `/api/projects/${projectId}/dashboard${workDate ? `?work_date=${encodeURIComponent(workDate)}` : ""}`
         ),
 
-  getCrews: (projectId: number) =>
-    isStaticPagesHost() ? demoFallback.getCrews(projectId) : jsonFetch<Crew[]>(`/api/projects/${projectId}/crews`),
-  addWorker: (crewId: number, name: string, role: WorkerRole) =>
-    isStaticPagesHost()
-      ? demoFallback.addWorker(crewId, name, role)
-      : jsonFetch(`/api/crews/${crewId}/workers`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ name, role }),
-        }),
+  getCrews: async (projectId: number): Promise<Crew[]> => {
+    const mode = await detectBackendMode();
+    if (mode === "static") return demoFallback.getCrews(projectId);
+    if (mode === "php") return phpFetch<Crew[]>(`crews&project_id=${projectId}`);
+    return jsonFetch<Crew[]>(`/api/projects/${projectId}/crews`);
+  },
+  addWorker: async (crewId: number, name: string, role: WorkerRole) => {
+    const mode = await detectBackendMode();
+    if (mode === "static") return demoFallback.addWorker(crewId, name, role);
+    if (mode === "php") {
+      return phpFetch("add_worker", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ crew_id: crewId, name, role }),
+      });
+    }
+    return jsonFetch(`/api/crews/${crewId}/workers`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name, role }),
+    });
+  },
 
   getSchedule: (projectId: number) =>
     isStaticPagesHost() ? demoFallback.getSchedule() : jsonFetch<ScheduleItem[]>(`/api/projects/${projectId}/schedule`),
@@ -184,8 +261,12 @@ export const api = {
       body: JSON.stringify(payload),
     }),
 
-  listAttendance: (projectId: number) =>
-    isStaticPagesHost() ? demoFallback.listAttendance(projectId) : jsonFetch<AttendanceLog[]>(`/api/projects/${projectId}/attendance`),
+  listAttendance: async (projectId: number): Promise<AttendanceLog[]> => {
+    const mode = await detectBackendMode();
+    if (mode === "static") return demoFallback.listAttendance(projectId);
+    if (mode === "php") return phpFetch<AttendanceLog[]>(`attendance&project_id=${projectId}`);
+    return jsonFetch<AttendanceLog[]>(`/api/projects/${projectId}/attendance`);
+  },
 
   saveAttendance: async (
     projectId: number,
@@ -229,13 +310,29 @@ export const api = {
       if (!data.ok) {
         throw new Error(data.error || "Error al guardar en Google Drive");
       }
-      if (isStaticPagesHost()) {
+      if ((await detectBackendMode()) === "static") {
         return demoFallback.saveAttendance(projectId, payload, groupPhotoBlob);
       }
     }
 
-    if (isStaticPagesHost()) {
+    const mode = await detectBackendMode();
+    if (mode === "static") {
       return demoFallback.saveAttendance(projectId, payload, groupPhotoBlob);
+    }
+    if (mode === "php") {
+      let photoBase64 = "";
+      if (groupPhotoBlob) {
+        photoBase64 = await blobToBase64(groupPhotoBlob);
+      }
+      return phpFetch<AttendanceLog>("save_attendance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          project_id: projectId,
+          ...payload,
+          photo_base64: photoBase64,
+        }),
+      });
     }
 
     const log = await jsonFetch<AttendanceLog>(`/api/projects/${projectId}/attendance`, {

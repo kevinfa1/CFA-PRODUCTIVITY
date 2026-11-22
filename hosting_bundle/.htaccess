@@ -1,0 +1,9 @@
+# Configuración Apache para CFA Asistencia PWA
+AddType application/manifest+json .webmanifest
+AddType application/javascript .js
+
+<FilesMatch "\.(json)$">
+  <IfModule mod_authz_core.c>
+    Require all denied
+  </IfModule>
+</FilesMatch>

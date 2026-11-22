@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { api, getAppsScriptUrl, setAppsScriptUrl } from "../api";
+import { api, detectBackendMode, getAppsScriptUrl, setAppsScriptUrl } from "../api";
 import { offlineDb } from "../db";
-import { isStaticPagesHost } from "../demoFallback";
 import {
   WORKER_ROLES,
   type AttendanceDraftEntry,
@@ -448,9 +447,14 @@ export function AttendanceView({
     }
   };
 
-  const handleDownloadCsv = () => {
-    if (!isStaticPagesHost()) {
+  const handleDownloadCsv = async () => {
+    const mode = await detectBackendMode();
+    if (mode === "fastapi") {
       window.location.href = `/api/projects/${project.id}/attendance/export.csv`;
+      return;
+    }
+    if (mode === "php") {
+      window.location.href = `./api.php?action=export_csv&project_id=${project.id}`;
       return;
     }
     const csv = buildAttendanceCsv(project.name, logs);
