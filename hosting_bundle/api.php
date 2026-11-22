@@ -162,7 +162,9 @@ if ($action === 'projects') {
 if ($action === 'crews') {
     $pid = (int)($_GET['project_id'] ?? 1);
     $all = load_crews($WORKERS_FILE);
-    $filtered = array_values(array_filter($all, fn($c) => (int)$c['project_id'] === $pid));
+    $filtered = array_values(array_filter($all, function ($c) use ($pid) {
+        return (int)$c['project_id'] === $pid;
+    }));
     json_out($filtered);
 }
 
@@ -191,7 +193,9 @@ if ($action === 'add_worker') {
 if ($action === 'attendance') {
     $pid = (int)($_GET['project_id'] ?? 1);
     $logs = load_attendance($ATTENDANCE_FILE);
-    $filtered = array_values(array_filter($logs, fn($l) => (int)$l['project_id'] === $pid));
+    $filtered = array_values(array_filter($logs, function ($l) use ($pid) {
+        return (int)$l['project_id'] === $pid;
+    }));
     json_out($filtered);
 }
 

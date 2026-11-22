@@ -92,8 +92,18 @@ async function jsonFetch<T>(url: string, init?: RequestInit): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-async function phpFetch<T>(action: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`./api.php?action=${encodeURIComponent(action)}`, init);
+async function phpFetch<T>(
+  action: string,
+  init?: RequestInit,
+  queryParams?: Record<string, string | number>
+): Promise<T> {
+  const qs = new URLSearchParams({ action });
+  if (queryParams) {
+    for (const [k, v] of Object.entries(queryParams)) {
+      qs.set(k, String(v));
+    }
+  }
+  const res = await fetch(`./api.php?${qs.toString()}`, init);
   const data = (await res.json()) as T & { ok?: boolean; error?: string };
   if (!res.ok || (data && typeof data === "object" && "ok" in data && data.ok === false)) {
     throw new Error((data as { error?: string }).error || `Error HTTP ${res.status}`);
@@ -159,7 +169,7 @@ export const api = {
   getCrews: async (projectId: number): Promise<Crew[]> => {
     const mode = await detectBackendMode();
     if (mode === "static") return demoFallback.getCrews(projectId);
-    if (mode === "php") return phpFetch<Crew[]>(`crews&project_id=${projectId}`);
+    if (mode === "php") return phpFetch<Crew[]>("crews", undefined, { project_id: projectId });
     return jsonFetch<Crew[]>(`/api/projects/${projectId}/crews`);
   },
   addWorker: async (crewId: number, name: string, role: WorkerRole) => {
@@ -268,7 +278,7 @@ export const api = {
   listAttendance: async (projectId: number): Promise<AttendanceLog[]> => {
     const mode = await detectBackendMode();
     if (mode === "static") return demoFallback.listAttendance(projectId);
-    if (mode === "php") return phpFetch<AttendanceLog[]>(`attendance&project_id=${projectId}`);
+    if (mode === "php") return phpFetch<AttendanceLog[]>("attendance", undefined, { project_id: projectId });
     return jsonFetch<AttendanceLog[]>(`/api/projects/${projectId}/attendance`);
   },
 
