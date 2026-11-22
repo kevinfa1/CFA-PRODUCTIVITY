@@ -127,6 +127,27 @@ def _get_configured_users() -> dict[str, dict]:
     admin_user = os.getenv("CFA_ADMIN_USER", "admin")
     admin_pass = os.getenv("CFA_ADMIN_PASSWORD", "cfa_admin_2026")
     return {
+        "moises": {
+            "username": "Moises",
+            "password": os.getenv("CFA_MOISES_PASSWORD", "flores2026"),
+            "display_name": "Moisés (Maestro de Obra)",
+            "role": "maestro",
+            "allowed_tabs": ["attendance"],
+        },
+        "kevin": {
+            "username": "kevin",
+            "password": os.getenv("CFA_KEVIN_PASSWORD", "kevin2026"),
+            "display_name": "Kevin",
+            "role": "admin",
+            "allowed_tabs": ["attendance"],
+        },
+        "norman": {
+            "username": "norman",
+            "password": os.getenv("CFA_NORMAN_PASSWORD", "norman2026"),
+            "display_name": "Norman",
+            "role": "admin",
+            "allowed_tabs": ["attendance"],
+        },
         maestro_user.lower(): {
             "username": maestro_user,
             "password": maestro_pass,

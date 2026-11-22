@@ -20,3 +20,9 @@ def test_login_success_and_invalid_credentials() -> None:
 
     bad_res = client.post("/api/auth/login", json={"username": "maestro", "password": "wrong"})
     assert bad_res.status_code == 401
+
+    for uname, pwd in [("Moises", "flores2026"), ("kevin", "kevin2026"), ("norman", "norman2026")]:
+        res = client.post("/api/auth/login", json={"username": uname, "password": pwd})
+        assert res.status_code == 200
+        assert res.json()["username"] == uname
+        assert res.json()["allowed_tabs"] == ["attendance"]

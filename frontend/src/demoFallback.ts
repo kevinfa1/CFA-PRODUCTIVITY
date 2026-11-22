@@ -108,21 +108,20 @@ export const isStaticPagesHost = (): boolean =>
 export const demoFallback = {
   login: async (username: string, password: string): Promise<AuthSession> => {
     const cleanUser = username.trim().toLowerCase();
-    if (cleanUser === "maestro" && password === "cfa2026") {
+    const accounts: Record<string, { username: string; password: string; display_name: string; role: string }> = {
+      moises: { username: "Moises", password: "flores2026", display_name: "Moisés (Maestro de Obra)", role: "maestro" },
+      kevin: { username: "kevin", password: "kevin2026", display_name: "Kevin", role: "admin" },
+      norman: { username: "norman", password: "norman2026", display_name: "Norman", role: "admin" },
+      maestro: { username: "maestro", password: "cfa2026", display_name: "Maestro de Obra", role: "maestro" },
+      admin: { username: "admin", password: "cfa_admin_2026", display_name: "Residente / Oficina", role: "admin" },
+    };
+    const match = accounts[cleanUser];
+    if (match && password === match.password) {
       return {
-        token: "demo-maestro-token",
-        username: "maestro",
-        display_name: "Maestro de Obra",
-        role: "maestro",
-        allowed_tabs: ["attendance"],
-      };
-    }
-    if (cleanUser === "admin" && password === "cfa_admin_2026") {
-      return {
-        token: "demo-admin-token",
-        username: "admin",
-        display_name: "Residente / Oficina",
-        role: "admin",
+        token: `demo-${cleanUser}-token`,
+        username: match.username,
+        display_name: match.display_name,
+        role: match.role,
         allowed_tabs: ["attendance"],
       };
     }
