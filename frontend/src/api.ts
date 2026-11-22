@@ -16,6 +16,8 @@ import { blobToBase64 } from "./utils/attendanceUtils";
 
 const API_BASE = import.meta.env.VITE_API_BASE || "";
 const APPS_SCRIPT_STORAGE_KEY = "cfa_apps_script_url_v1";
+const DEFAULT_APPS_SCRIPT_URL =
+  "https://script.google.com/macros/s/AKfycbzEDg5uAeFjEDqmqQU22K2GGfO61_rInNZvJBI1eDrk-8rCP-3AaOElNfEVMOwcZF8B/exec";
 
 type BackendMode = "fastapi" | "php" | "static";
 let detectedModePromise: Promise<BackendMode> | null = null;
@@ -55,10 +57,12 @@ export function getAppsScriptUrl(): string {
   const envUrl = (import.meta.env.VITE_APPS_SCRIPT_URL as string | undefined) || "";
   if (envUrl.trim()) return envUrl.trim();
   try {
-    return (localStorage.getItem(APPS_SCRIPT_STORAGE_KEY) || "").trim();
+    const saved = (localStorage.getItem(APPS_SCRIPT_STORAGE_KEY) || "").trim();
+    if (saved) return saved;
   } catch {
-    return "";
+    // ignore
   }
+  return DEFAULT_APPS_SCRIPT_URL;
 }
 
 export function setAppsScriptUrl(url: string): void {
