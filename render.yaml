@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: cfa-productivity
+    runtime: docker
+    plan: free
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: CFA_DATA_DIR
+        value: /app/data
+      - key: GEMINI_MODEL
+        value: gemini-2.5-flash
+      # Opcional: agrega GEMINI_API_KEY desde el panel de Render para activar auditoría multimodal
+      # Opcional: agrega CFA_DATABASE_URL (PostgreSQL) para persistencia en producción

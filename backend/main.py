@@ -827,3 +827,13 @@ def export_piecework_payroll_csv(project_id: int, db: Session = Depends(get_db))
         media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": f'attachment; filename="cfa_destajo_proyecto_{project_id}.csv"'},
     )
+
+
+# ---------------------------------------------------------------------------
+# Servir PWA compilada (frontend/dist) en producción (1 sola URL HTTPS)
+# ---------------------------------------------------------------------------
+
+FRONTEND_DIST_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+if (FRONTEND_DIST_DIR / "index.html").exists():
+    app.mount("/", StaticFiles(directory=str(FRONTEND_DIST_DIR), html=True), name="frontend")
+

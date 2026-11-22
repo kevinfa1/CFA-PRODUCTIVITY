@@ -40,6 +40,24 @@ CFA-PRODUCTIVITY/
 
 ---
 
+## Despliegue en la Nube en 1 Clic (HTTPS listo para celular en obra)
+
+El repositorio incluye un [`Dockerfile`](Dockerfile) multi-etapa que compila la PWA y la sirve unificada con el backend FastAPI en **una sola URL HTTPS** (sin problemas de CORS y lista para instalar en Android/iOS).
+
+- **Opción A — Render (plan gratuito con HTTPS automático):**
+  1. Abre: https://render.com/deploy?repo=https://github.com/kevinfa1/CFA-PRODUCTIVITY
+  2. Inicia sesión con tu cuenta de GitHub y pulsa **Apply** (usa [`render.yaml`](render.yaml) automáticamente).
+  3. En ~3 minutos tendrás tu URL pública `https://cfa-productivity.onrender.com` con el proyecto piloto precargado y despliegue automático en cada `git push`.
+- **Opción B — Railway:**
+  1. En https://railway.app/new elige **Deploy from GitHub repo** → selecciona `kevinfa1/CFA-PRODUCTIVITY` (detecta [`railway.json`](railway.json) y [`Dockerfile`](Dockerfile)).
+  2. Genera un dominio público en *Settings → Networking → Generate Domain*.
+
+> **Variables de entorno opcionales en la nube:**
+> - `GEMINI_API_KEY`: activa la auditoría visual multimodal automática en cada captura diaria.
+> - `CFA_DATABASE_URL`: conecta una base PostgreSQL administrada (si se omite, usa SQLite local).
+
+---
+
 ## Cómo ejecutar el MVP en local
 
 ### 1. Backend (FastAPI + OpenCV + SQLite)
